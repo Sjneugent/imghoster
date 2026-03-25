@@ -33,9 +33,17 @@ Minimal personal image hosting with a Node.js/Express backend, SQLite database a
 
 ## Quick Start
 
+> **Tip:** A root-level `package.json` lets you run the main npm scripts
+> (`seed`, `start`, `dev`, `test`) from the project root. You can also
+> `cd backend` and run them there.
+
 ### 1. Install dependencies
 
 ```bash
+# From the project root:
+npm run install:backend
+
+# Or from the backend directory:
 cd backend
 npm install
 ```
@@ -43,15 +51,16 @@ npm install
 ### 2. Configure environment
 
 ```bash
-cp .env.example .env
-# Edit .env and set a strong SESSION_SECRET
+cp backend/.env.example backend/.env
+# Edit backend/.env and set a strong SESSION_SECRET
 ```
 
 ### 3. Create the first admin user
 
 ```bash
 npm run seed
-# Or: node seed.js myusername mypassword
+# Or with explicit credentials:
+cd backend && node seed.js myusername mypassword
 ```
 
 ### 4. Start the server
