@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ImgHoster – Upload</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Navbar -->
+    <nav class="navbar">
+      <a class="brand" href="/upload.html">🖼️ ImgHoster</a>
+      <span class="spacer"></span>
+      <span class="user-info" id="nav-user"></span>
+      <button class="btn-logout" id="btn-logout" type="button">Log out</button>
+    </nav>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <nav>
+        <a href="upload.html"><span class="nav-icon">⬆️</span> Upload</a>
+        <a href="list.html"><span class="nav-icon">🗂️</span> My Images</a>
+        <a href="stats.html"><span class="nav-icon">📊</span> Statistics</a>
+        <a href="dashboard.html" data-admin-only><span class="nav-icon">⚙️</span> Dashboard</a>
+      </nav>
+    </aside>
+
+    <!-- Main -->
+    <main class="main-content">
+      <h1 class="page-title">Upload Image</h1>
+
+      <div class="card" style="max-width:560px">
+        <div class="alert" id="alert" role="alert"></div>
+
+        <form id="upload-form" novalidate>
+          <!-- Drop zone -->
+          <div class="form-group">
+            <label class="form-label">Image File</label>
+            <div class="drop-zone" id="drop-zone">
+              <input type="file" id="file-input" name="image"
+                     accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml" />
+              <div class="dz-icon">📁</div>
+              <div class="dz-label">Drag &amp; drop an image here, or <strong>click to browse</strong></div>
+              <p style="font-size:.8rem;color:var(--text-muted);margin-top:.5rem">
+                JPEG, PNG, GIF, WebP, SVG — max 20 MB
+              </p>
+              <div class="dz-preview" id="dz-preview" style="display:none">
+                <img id="preview-img" src="" alt="Preview" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Custom slug -->
+          <div class="form-group">
+            <label class="form-label" for="slug">Custom URL slug (optional)</label>
+            <input class="form-control" type="text" id="slug" name="slug"
+                   placeholder="e.g. my-screenshot-2024"
+                   pattern="[a-zA-Z0-9_-]+" maxlength="120" />
+            <p class="form-hint">
+              Leave blank to auto-generate. Only letters, numbers, hyphens and underscores.
+              The image will be accessible at <code>/i/&lt;slug&gt;</code>.
+            </p>
+          </div>
+
+          <button class="btn btn-primary" type="submit" id="upload-btn" disabled>
+            ⬆️ Upload
+          </button>
+        </form>
+
+        <!-- Result -->
+        <div id="result" style="display:none;margin-top:1.5rem">
+          <p style="font-weight:600;color:var(--success);margin-bottom:.6rem">✓ Uploaded successfully!</p>
+          <div class="url-box">
+            <span id="result-url" style="flex:1"></span>
+            <button class="copy-btn" id="copy-btn" title="Copy URL">📋</button>
+          </div>
+          <div style="margin-top:.75rem;display:flex;gap:.5rem;flex-wrap:wrap">
+            <a class="btn btn-ghost btn-sm" id="view-link" href="#" target="_blank" rel="noopener">Open image ↗</a>
+            <button class="btn btn-ghost btn-sm" id="upload-another">Upload another</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script src="/js/upload.js"></script>
+</body>
+</html>

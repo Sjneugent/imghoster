@@ -1,0 +1,24 @@
+# Node.js dependencies
+backend/node_modules/
+backend/package-lock.json
+
+# Database and sessions (runtime data)
+backend/data/
+backend/sessions.db
+
+# Uploaded images (runtime data)
+uploads/*
+!uploads/.gitkeep
+
+# Environment config (contains secrets)
+backend/.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
