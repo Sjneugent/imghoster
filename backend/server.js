@@ -9,7 +9,8 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const SQLiteStore = require('connect-sqlite3')(session);
+const Database = require('better-sqlite3');
+const SqliteSessionStore = require('express-session-better-sqlite3');
 const { initDB } = require('./db');
 
 const PORT = process.env.PORT || 3000;
@@ -51,9 +52,12 @@ app.use(express.urlencoded({ extended: true }));
 const dataDir = path.dirname(DB_PATH);
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
+const sessionDb = new Database(path.join(dataDir, 'sessions.db'));
+const SQLiteStore = SqliteSessionStore(session, sessionDb);
+
 app.use(
   session({
-    store: new SQLiteStore({ db: 'sessions.db', dir: dataDir }),
+    store: new SQLiteStore(),
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
