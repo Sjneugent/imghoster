@@ -201,9 +201,11 @@ describe('HTTP API', () => {
 
   let sessionCookie = '';
 
-  test('GET /api/auth/me – unauthenticated returns 401', async () => {
+  test('GET /api/auth/me – unauthenticated from localhost returns admin', async () => {
     const r = await request('GET', '/api/auth/me');
-    assert.equal(r.status, 401);
+    assert.equal(r.status, 200);
+    assert.equal(r.body.username, 'localhost-admin');
+    assert.equal(r.body.isAdmin, true);
   });
 
   test('POST /api/auth/login – wrong password returns 401', async () => {
@@ -245,7 +247,7 @@ describe('HTTP API', () => {
     assert.ok(r.body.length >= 2);
   });
 
-  test('GET /api/admin/users – non-admin gets 403', async () => {
+  test('GET /api/admin/users – non-admin from localhost still gets access', async () => {
     // Login as regular user
     const loginR = await request('POST', '/api/auth/login', {
       body: { username: 'regular', password: 'RegPass1!' },
@@ -253,15 +255,23 @@ describe('HTTP API', () => {
     const regCookie = loginR.cookies.map(c => c.split(';')[0]).join('; ');
 
     const r = await request('GET', '/api/admin/users', { cookies: regCookie });
-    assert.equal(r.status, 403);
+    assert.equal(r.status, 200);
+    assert.ok(Array.isArray(r.body));
   });
 
   test('POST /api/auth/logout – clears session', async () => {
     const r = await request('POST', '/api/auth/logout', { cookies: sessionCookie });
     assert.equal(r.status, 200);
 
-    // After logout, /me should fail
+    // After logout, /me returns localhost-admin (because tests run on 127.0.0.1)
     const meR = await request('GET', '/api/auth/me', { cookies: sessionCookie });
-    assert.equal(meR.status, 401);
+    assert.equal(meR.status, 200);
+    assert.equal(meR.body.username, 'localhost-admin');
+  });
+
+  test('GET /api/admin/users – accessible without auth from localhost', async () => {
+    const r = await request('GET', '/api/admin/users');
+    assert.equal(r.status, 200);
+    assert.ok(Array.isArray(r.body));
   });
 });

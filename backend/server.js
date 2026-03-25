@@ -111,6 +111,10 @@ function csrfProtect(req, res, next) {
   // Test mode bypasses CSRF
   if (process.env.NODE_ENV === 'test') return next();
 
+  // Localhost bypasses CSRF
+  const { isLocalhost } = require('./middleware/requireAuth');
+  if (isLocalhost(req)) return next();
+
   const token = req.headers['x-csrf-token'];
   if (!token || !req.session.csrfToken || token !== req.session.csrfToken) {
     return res.status(403).json({ error: 'CSRF check failed.' });
