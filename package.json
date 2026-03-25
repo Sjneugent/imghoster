@@ -1,0 +1,13 @@
+{
+  "name": "imghoster-root",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal personal image hosting – monorepo root",
+  "scripts": {
+    "install:backend": "cd backend && npm install",
+    "start": "cd backend && npm start",
+    "dev": "cd backend && npm run dev",
+    "seed": "cd backend && node seed.js",
+    "test": "cd backend && npm test"
+  }
+}
