@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ImgHoster – Statistics</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <!-- Lightweight chart library (Chart.js via CDN or bundled) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"
+          integrity="sha384-OLBgp1GsljhM2TJ+sbHjaiH9txEUvgdDTAzHv2P24donTt6/529l+9Ua0vFImLlb"
+          crossorigin="anonymous"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="navbar">
+      <a class="brand" href="/upload.html">🖼️ ImgHoster</a>
+      <span class="spacer"></span>
+      <span class="user-info" id="nav-user"></span>
+      <button class="btn-logout" id="btn-logout" type="button">Log out</button>
+    </nav>
+
+    <aside class="sidebar">
+      <nav>
+        <a href="upload.html"><span class="nav-icon">⬆️</span> Upload</a>
+        <a href="list.html"><span class="nav-icon">🗂️</span> My Images</a>
+        <a href="stats.html"><span class="nav-icon">📊</span> Statistics</a>
+        <a href="dashboard.html" data-admin-only><span class="nav-icon">⚙️</span> Dashboard</a>
+      </nav>
+    </aside>
+
+    <main class="main-content">
+      <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
+        <h1 class="page-title" style="margin:0">Statistics</h1>
+        <span style="flex:1"></span>
+        <label id="show-all-label" style="display:none;align-items:center;gap:.4rem;font-size:.88rem">
+          <input type="checkbox" id="show-all" /> All users
+        </label>
+        <select class="form-control" id="days-select" style="width:auto;padding:.35rem .7rem">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="365">Last year</option>
+        </select>
+      </div>
+
+      <div class="stat-grid" id="stat-grid"></div>
+
+      <div class="card" style="margin-bottom:1.5rem">
+        <p style="font-weight:600;margin-bottom:1rem">Views over time</p>
+        <div class="chart-container">
+          <canvas id="timeline-chart"></canvas>
+        </div>
+      </div>
+
+      <div class="card" style="padding:0">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Image</th>
+                <th id="col-user" style="display:none">User</th>
+                <th>Total views</th>
+                <th>Last viewed</th>
+                <th>Uploaded</th>
+              </tr>
+            </thead>
+            <tbody id="stats-tbody">
+              <tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-muted)">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script src="/js/stats.js"></script>
+</body>
+</html>

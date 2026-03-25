@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ImgHoster – My Images</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="navbar">
+      <a class="brand" href="/upload.html">🖼️ ImgHoster</a>
+      <span class="spacer"></span>
+      <span class="user-info" id="nav-user"></span>
+      <button class="btn-logout" id="btn-logout" type="button">Log out</button>
+    </nav>
+
+    <aside class="sidebar">
+      <nav>
+        <a href="upload.html"><span class="nav-icon">⬆️</span> Upload</a>
+        <a href="list.html"><span class="nav-icon">🗂️</span> My Images</a>
+        <a href="stats.html"><span class="nav-icon">📊</span> Statistics</a>
+        <a href="dashboard.html" data-admin-only><span class="nav-icon">⚙️</span> Dashboard</a>
+      </nav>
+    </aside>
+
+    <main class="main-content">
+      <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
+        <h1 class="page-title" style="margin:0">My Images</h1>
+        <span class="spacer" style="flex:1"></span>
+        <label id="show-all-label" style="display:none;align-items:center;gap:.4rem;font-size:.88rem">
+          <input type="checkbox" id="show-all" /> Show all users
+        </label>
+        <a class="btn btn-primary btn-sm" href="upload.html">⬆️ Upload new</a>
+      </div>
+
+      <div class="alert" id="alert" role="alert"></div>
+
+      <div class="card" style="padding:0">
+        <div class="table-wrap">
+          <table id="images-table">
+            <thead>
+              <tr>
+                <th>Preview</th>
+                <th>Slug / URL</th>
+                <th id="col-user" style="display:none">User</th>
+                <th>Size</th>
+                <th>Views</th>
+                <th>Uploaded</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="images-tbody">
+              <tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted)">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script src="/js/list.js"></script>
+</body>
+</html>

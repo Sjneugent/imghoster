@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ImgHoster – Login</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body class="page-login">
+  <div class="card login-card">
+    <div class="login-logo">
+      <div class="logo-icon">🖼️</div>
+      <h1>ImgHoster</h1>
+      <p>Personal image hosting</p>
+    </div>
+
+    <div class="alert" id="alert" role="alert"></div>
+
+    <form id="login-form" novalidate>
+      <div class="form-group">
+        <label class="form-label" for="username">Username</label>
+        <input class="form-control" type="text" id="username" name="username"
+               autocomplete="username" autofocus required />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="password">Password</label>
+        <input class="form-control" type="password" id="password" name="password"
+               autocomplete="current-password" required />
+      </div>
+      <div class="form-group">
+        <label class="checkbox-row">
+          <input type="checkbox" id="rememberMe" name="rememberMe" />
+          <span>Remember me for 30 days</span>
+        </label>
+      </div>
+      <button class="btn btn-primary btn-full" type="submit" id="submit-btn">
+        Sign in
+      </button>
+    </form>
+  </div>
+
+  <script src="/js/login.js"></script>
+</body>
+</html>
