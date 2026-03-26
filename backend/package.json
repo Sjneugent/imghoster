@@ -5,9 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "start:secure": "LOCALHOST_BYPASS=false node server.js",
+    "start:secure": "cross-env LOCALHOST_BYPASS=false node server.js",
     "dev": "node --watch server.js",
-    "dev:secure": "LOCALHOST_BYPASS=false node --watch server.js",
+    "dev:secure": "cross-env LOCALHOST_BYPASS=false node --watch server.js",
     "seed": "node seed.js",
     "test": "node --test tests/api.test.js",
     "db:backup": "node scripts/db-backup.js",
@@ -34,5 +34,8 @@
   },
   "optionalDependencies": {
     "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0"
   }
 }
