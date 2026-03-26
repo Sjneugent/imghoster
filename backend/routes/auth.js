@@ -3,6 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const { getUserByUsername, verifyPassword } = require('../db');
+const { isLocalhost } = require('../middleware/requireAuth');
 
 // POST /api/auth/login
 router.post('/login', (req, res) => {
@@ -50,6 +51,14 @@ router.post('/logout', (req, res) => {
 // GET /api/auth/me  – returns current session info + CSRF token
 router.get('/me', (req, res) => {
   if (!req.session || !req.session.userId) {
+    if (isLocalhost(req)) {
+      return res.json({
+        id: 0,
+        username: 'localhost-admin',
+        isAdmin: true,
+        csrfToken: req.session ? req.session.csrfToken : null,
+      });
+    }
     return res.status(401).json({ error: 'Not authenticated.' });
   }
   res.json({

@@ -12,6 +12,7 @@ const crypto = require('crypto');
 const Database = require('better-sqlite3');
 const SqliteSessionStore = require('express-session-better-sqlite3');
 const { initDB } = require('./db');
+const { isLocalhost } = require('./middleware/requireAuth');
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -110,6 +111,9 @@ function csrfProtect(req, res, next) {
 
   // Test mode bypasses CSRF
   if (process.env.NODE_ENV === 'test') return next();
+
+  // Localhost bypasses CSRF
+  if (isLocalhost(req)) return next();
 
   const token = req.headers['x-csrf-token'];
   if (!token || !req.session.csrfToken || token !== req.session.csrfToken) {

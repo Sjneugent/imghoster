@@ -201,9 +201,11 @@ describe('HTTP API', () => {
 
   let sessionCookie = '';
 
-  test('GET /api/auth/me – unauthenticated returns 401', async () => {
+  test('GET /api/auth/me – unauthenticated from localhost returns admin', async () => {
     const r = await request('GET', '/api/auth/me');
-    assert.equal(r.status, 401);
+    assert.equal(r.status, 200);
+    assert.equal(r.body.username, 'localhost-admin');
+    assert.equal(r.body.isAdmin, true);
   });
 
   test('POST /api/auth/login – wrong password returns 401', async () => {
@@ -245,7 +247,7 @@ describe('HTTP API', () => {
     assert.ok(r.body.length >= 2);
   });
 
-  test('GET /api/admin/users – non-admin gets 403', async () => {
+  test('GET /api/admin/users – non-admin from localhost still gets access', async () => {
     // Login as regular user
     const loginR = await request('POST', '/api/auth/login', {
       body: { username: 'regular', password: 'RegPass1!' },
@@ -253,15 +255,87 @@ describe('HTTP API', () => {
     const regCookie = loginR.cookies.map(c => c.split(';')[0]).join('; ');
 
     const r = await request('GET', '/api/admin/users', { cookies: regCookie });
-    assert.equal(r.status, 403);
+    assert.equal(r.status, 200);
+    assert.ok(Array.isArray(r.body));
   });
 
   test('POST /api/auth/logout – clears session', async () => {
     const r = await request('POST', '/api/auth/logout', { cookies: sessionCookie });
     assert.equal(r.status, 200);
 
-    // After logout, /me should fail
+    // After logout, /me returns localhost-admin (because tests run on 127.0.0.1)
     const meR = await request('GET', '/api/auth/me', { cookies: sessionCookie });
-    assert.equal(meR.status, 401);
+    assert.equal(meR.status, 200);
+    assert.equal(meR.body.username, 'localhost-admin');
+  });
+
+  test('GET /api/admin/users – accessible without auth from localhost', async () => {
+    const r = await request('GET', '/api/admin/users');
+    assert.equal(r.status, 200);
+    assert.ok(Array.isArray(r.body));
+  });
+
+  // Helper: perform a multipart upload request
+  function uploadRequest(urlPath, filename, fileContent, mimeType, { cookies = '' } = {}) {
+    return new Promise((resolve, reject) => {
+      const url = new URL(urlPath, baseUrl);
+      const boundary = '----TestBoundary' + Date.now();
+      const body = Buffer.concat([
+        Buffer.from(
+          `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="image"; filename="${filename}"\r\n` +
+          `Content-Type: ${mimeType}\r\n\r\n`
+        ),
+        fileContent,
+        Buffer.from(`\r\n--${boundary}--\r\n`),
+      ]);
+
+      const opts = {
+        method: 'POST',
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname,
+        headers: {
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': body.length,
+          Cookie: cookies,
+        },
+      };
+
+      const req = http.request(opts, (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          let parsed;
+          try { parsed = JSON.parse(data); } catch { parsed = data; }
+          resolve({ status: res.statusCode, body: parsed });
+        });
+      });
+
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    });
+  }
+
+  test('POST /api/images/upload – localhost without auth can upload', async () => {
+    // Create a minimal valid JPEG (smallest valid JPEG is ~107 bytes)
+    const jpegHeader = Buffer.from([
+      0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
+      0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
+    ]);
+
+    const r = await uploadRequest('/api/images/upload', 'test.jpg', jpegHeader, 'image/jpeg');
+    assert.equal(r.status, 201, `Expected 201 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.ok(r.body.id, 'should return image id');
+    assert.ok(r.body.slug, 'should return slug');
+    assert.ok(r.body.url, 'should return url');
+  });
+
+  test('GET /api/images – localhost without auth returns images', async () => {
+    const r = await request('GET', '/api/images');
+    assert.equal(r.status, 200);
+    assert.ok(Array.isArray(r.body));
+    assert.ok(r.body.length >= 1, 'should contain at least the uploaded image');
   });
 });
