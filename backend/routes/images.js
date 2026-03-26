@@ -171,10 +171,14 @@ router.post('/download', requireAuth, (req, res) => {
       return res.status(400).json({ error: 'Provide an array of image IDs.' });
     }
 
+    if (ids.length > 500) {
+      return res.status(400).json({ error: 'Too many images. Maximum 500 per download.' });
+    }
+
     // Sanitise: only accept positive integers
-    const safeIds = ids
-      .map(id => Number(id))
-      .filter(id => Number.isInteger(id) && id > 0);
+    const safeIds = [...new Set(
+      ids.map(id => Number(id)).filter(id => Number.isInteger(id) && id > 0)
+    )];
 
     if (safeIds.length === 0) {
       return res.status(400).json({ error: 'No valid image IDs provided.' });
