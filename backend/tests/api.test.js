@@ -376,12 +376,14 @@ describe('HTTP API', () => {
 
 // ── Localhost bypass toggle tests ─────────────────────────────────────────────
 describe('Localhost bypass toggle', () => {
+  // isLocalhost reads process.env.LOCALHOST_BYPASS on every call,
+  // so we only need to change the env var before calling the function.
+  const { isLocalhost } = require('../middleware/requireAuth');
+
   test('isLocalhost returns false when LOCALHOST_BYPASS=false', () => {
     const original = process.env.LOCALHOST_BYPASS;
     process.env.LOCALHOST_BYPASS = 'false';
 
-    // Re-require to pick up the env var (the function reads env on each call)
-    const { isLocalhost } = require('../middleware/requireAuth');
     const fakeReq = { ip: '127.0.0.1' };
     assert.equal(isLocalhost(fakeReq), false, 'isLocalhost should return false when bypass is disabled');
 
@@ -397,7 +399,6 @@ describe('Localhost bypass toggle', () => {
     const original = process.env.LOCALHOST_BYPASS;
     delete process.env.LOCALHOST_BYPASS;
 
-    const { isLocalhost } = require('../middleware/requireAuth');
     const fakeReq = { ip: '127.0.0.1' };
     assert.equal(isLocalhost(fakeReq), true, 'isLocalhost should return true when bypass is enabled by default');
 
@@ -411,7 +412,6 @@ describe('Localhost bypass toggle', () => {
     const original = process.env.LOCALHOST_BYPASS;
     delete process.env.LOCALHOST_BYPASS;
 
-    const { isLocalhost } = require('../middleware/requireAuth');
     const fakeReq = { ip: '192.168.1.100' };
     assert.equal(isLocalhost(fakeReq), false, 'isLocalhost should return false for non-localhost IP');
 
