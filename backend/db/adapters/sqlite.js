@@ -57,9 +57,23 @@ class SqliteAdapter extends BaseAdapter {
         FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS api_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        token_hash TEXT UNIQUE NOT NULL,
+        label TEXT,
+        expires_at TEXT NOT NULL,
+        last_used_at TEXT,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
       CREATE INDEX IF NOT EXISTS idx_images_slug ON images(slug);
       CREATE INDEX IF NOT EXISTS idx_images_user ON images(user_id);
       CREATE INDEX IF NOT EXISTS idx_views_image ON image_views(image_id);
+      CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
+      CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash);
     `);
 
     // Backward-compatible migration for existing DB files.
@@ -150,6 +164,57 @@ class SqliteAdapter extends BaseAdapter {
 
   async verifyPassword(plainPassword, hash) {
     return bcrypt.compare(plainPassword, hash);
+  }
+
+  // ── API token helpers ────────────────────────────────────────────────────
+
+  async createApiToken({ userId, tokenHash, label, expiresAt }) {
+    const stmt = this.db.prepare(
+      `INSERT INTO api_tokens (user_id, token_hash, label, expires_at)
+       VALUES (?, ?, ?, ?)`
+    );
+    const result = stmt.run(userId, tokenHash, label || null, expiresAt);
+    return Number(result.lastInsertRowid);
+  }
+
+  async getActiveApiTokenByHash(tokenHash) {
+    return this.db
+      .prepare(
+        `SELECT t.id, t.user_id, t.expires_at, u.username, u.is_admin
+         FROM api_tokens t
+         JOIN users u ON u.id = t.user_id
+         WHERE t.token_hash = ?
+           AND t.revoked_at IS NULL
+           AND julianday(t.expires_at) > julianday('now')`
+      )
+      .get(tokenHash);
+  }
+
+  async listApiTokensByUser(userId) {
+    return this.db
+      .prepare(
+        `SELECT id, label, expires_at, last_used_at, revoked_at, created_at
+         FROM api_tokens
+         WHERE user_id = ?
+         ORDER BY created_at DESC`
+      )
+      .all(userId);
+  }
+
+  async revokeApiToken(userId, tokenId) {
+    return this.db
+      .prepare(
+        `UPDATE api_tokens
+         SET revoked_at = datetime('now')
+         WHERE id = ? AND user_id = ? AND revoked_at IS NULL`
+      )
+      .run(tokenId, userId);
+  }
+
+  async touchApiTokenUsage(tokenId) {
+    return this.db
+      .prepare('UPDATE api_tokens SET last_used_at = datetime(\'now\') WHERE id = ?')
+      .run(tokenId);
   }
 
   // ── Image helpers ─────────────────────────────────────────────────────────
@@ -281,18 +346,51 @@ class SqliteAdapter extends BaseAdapter {
       : this.db.prepare(query).all();
   }
 
-  async getViewsOverTime(imageId, days = 30) {
+  async getViewsOverTime(imageId, days = 30, userId = null) {
+    const hasImageFilter = Number.isInteger(imageId) && imageId > 0;
+    const hasUserFilter = Number.isInteger(userId) && userId > 0;
+
+    if (hasUserFilter) {
+      if (hasImageFilter) {
+        return this.db
+          .prepare(
+            `SELECT date(v.viewed_at) AS day, COUNT(*) AS views
+             FROM image_views v
+             JOIN images i ON i.id = v.image_id
+             WHERE v.viewed_at >= datetime('now', '-' || ? || ' days')
+               AND v.image_id = ?
+               AND i.user_id = ?
+             GROUP BY day
+             ORDER BY day`
+          )
+          .all(days, imageId, userId);
+      }
+
+      return this.db
+        .prepare(
+          `SELECT date(v.viewed_at) AS day, COUNT(*) AS views
+           FROM image_views v
+           JOIN images i ON i.id = v.image_id
+           WHERE v.viewed_at >= datetime('now', '-' || ? || ' days')
+             AND i.user_id = ?
+           GROUP BY day
+           ORDER BY day`
+        )
+        .all(days, userId);
+    }
+
     const base = `
       SELECT date(viewed_at) AS day, COUNT(*) AS views
       FROM image_views
       WHERE viewed_at >= datetime('now', '-' || ? || ' days')
     `;
 
-    if (imageId) {
+    if (hasImageFilter) {
       return this.db
         .prepare(base + ' AND image_id = ? GROUP BY day ORDER BY day')
         .all(days, imageId);
     }
+
     return this.db
       .prepare(base + ' GROUP BY day ORDER BY day')
       .all(days);
@@ -304,12 +402,14 @@ class SqliteAdapter extends BaseAdapter {
     const users = this.db.prepare('SELECT * FROM users').all();
     const images = this.db.prepare('SELECT * FROM images').all();
     const imageViews = this.db.prepare('SELECT * FROM image_views').all();
-    return { users, images, image_views: imageViews };
+    const apiTokens = this.db.prepare('SELECT * FROM api_tokens').all();
+    return { users, images, image_views: imageViews, api_tokens: apiTokens };
   }
 
   async importData(data) {
     const trx = this.db.transaction(() => {
       // Clear existing data (order matters for foreign keys)
+      this.db.prepare('DELETE FROM api_tokens').run();
       this.db.prepare('DELETE FROM image_views').run();
       this.db.prepare('DELETE FROM images').run();
       this.db.prepare('DELETE FROM users').run();
@@ -350,6 +450,23 @@ class SqliteAdapter extends BaseAdapter {
       );
       for (const v of data.image_views) {
         insertView.run(v.id, v.image_id, v.viewed_at, v.ip_address, v.referrer);
+      }
+
+      const insertToken = this.db.prepare(
+        `INSERT INTO api_tokens (id, user_id, token_hash, label, expires_at, last_used_at, revoked_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      for (const t of (data.api_tokens || [])) {
+        insertToken.run(
+          t.id,
+          t.user_id,
+          t.token_hash,
+          t.label || null,
+          t.expires_at,
+          t.last_used_at || null,
+          t.revoked_at || null,
+          t.created_at
+        );
       }
     });
     trx();

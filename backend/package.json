@@ -10,6 +10,7 @@
     "dev:secure": "cross-env LOCALHOST_BYPASS=false node --watch server.js",
     "seed": "node seed.js",
     "test": "node --test tests/api.test.js",
+    "loadtest": "node scripts/loadtest.js",
     "db:backup": "node scripts/db-backup.js",
     "db:restore": "node scripts/db-restore.js",
     "db:migrate": "node scripts/db-migrate.js --reinit",
@@ -20,7 +21,6 @@
   },
   "dependencies": {
     "@hapi/bourne": "^3.0.0",
-    "archiver": "^7.0.1",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.8.0",
     "dotenv": "^17.3.1",
@@ -31,7 +31,8 @@
     "helmet": "^7.1.0",
     "multer": "^2.1.1",
     "sharp": "^0.34.5",
-    "uuid": "^10.0.0"
+    "uuid": "^10.0.0",
+    "yazl": "^3.3.1"
   },
   "optionalDependencies": {
     "pg": "^8.13.0"

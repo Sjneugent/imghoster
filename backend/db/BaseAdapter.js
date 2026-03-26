@@ -65,6 +65,28 @@ class BaseAdapter {
     throw new Error('Not implemented: verifyPassword');
   }
 
+  // ── API token helpers ─────────────────────────────────────────────────────
+
+  async createApiToken({ userId, tokenHash, label, expiresAt }) {
+    throw new Error('Not implemented: createApiToken');
+  }
+
+  async getActiveApiTokenByHash(tokenHash) {
+    throw new Error('Not implemented: getActiveApiTokenByHash');
+  }
+
+  async listApiTokensByUser(userId) {
+    throw new Error('Not implemented: listApiTokensByUser');
+  }
+
+  async revokeApiToken(userId, tokenId) {
+    throw new Error('Not implemented: revokeApiToken');
+  }
+
+  async touchApiTokenUsage(tokenId) {
+    throw new Error('Not implemented: touchApiTokenUsage');
+  }
+
   // ── Image helpers ─────────────────────────────────────────────────────────
 
   /**
@@ -126,7 +148,7 @@ class BaseAdapter {
   }
 
   /** @returns {Array} { day, views } rows */
-  async getViewsOverTime(imageId, days = 30) {
+  async getViewsOverTime(imageId, days = 30, userId = null) {
     throw new Error('Not implemented: getViewsOverTime');
   }
 
@@ -134,7 +156,7 @@ class BaseAdapter {
 
   /**
    * Export all data as a plain JS object suitable for JSON serialisation.
-   * @returns {{ users: Array, images: Array, image_views: Array }}
+   * @returns {{ users: Array, images: Array, image_views: Array, api_tokens?: Array }}
    */
   async exportData() {
     throw new Error('Not implemented: exportData');
@@ -143,7 +165,7 @@ class BaseAdapter {
   /**
    * Import data previously exported by exportData().
    * Clears existing data first.
-   * @param {{ users: Array, images: Array, image_views: Array }} data
+   * @param {{ users: Array, images: Array, image_views: Array, api_tokens?: Array }} data
    */
   async importData(data) {
     throw new Error('Not implemented: importData');

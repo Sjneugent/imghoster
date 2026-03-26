@@ -180,6 +180,7 @@ describe('Database helpers', () => {
 // ── HTTP integration tests ────────────────────────────────────────────────────
 describe('HTTP API', () => {
   let app, server, baseUrl, adminId;
+  let createdApiToken = '';
 
   before(async () => {
     // Create a second test DB for HTTP tests to avoid cross-contamination
@@ -327,6 +328,39 @@ describe('HTTP API', () => {
     const r = await request('GET', '/api/auth/me', { cookies: sessionCookie });
     assert.equal(r.status, 200);
     assert.equal(r.body.username, 'admin');
+  });
+
+  test('POST /api/auth/tokens – creates time-limited API token', async () => {
+    const r = await request('POST', '/api/auth/tokens', {
+      cookies: sessionCookie,
+      body: { label: 'test-token', durationMinutes: 60 },
+    });
+    assert.equal(r.status, 201, `Expected 201 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.ok(r.body.token, 'should return plaintext token once');
+    createdApiToken = r.body.token;
+  });
+
+  test('GET /api/images – requires token when localhost bypass disabled', async () => {
+    const originalBypass = process.env.LOCALHOST_BYPASS;
+    process.env.LOCALHOST_BYPASS = 'false';
+    try {
+      const noToken = await request('GET', '/api/images', { cookies: sessionCookie });
+      assert.equal(noToken.status, 401);
+      assert.ok(noToken.body.error);
+
+      const withToken = await request('GET', '/api/images', {
+        cookies: sessionCookie,
+        headers: { Authorization: `Bearer ${createdApiToken}` },
+      });
+      assert.equal(withToken.status, 200, `Expected 200 but got ${withToken.status}: ${JSON.stringify(withToken.body)}`);
+      assert.ok(Array.isArray(withToken.body));
+    } finally {
+      if (originalBypass === undefined) {
+        delete process.env.LOCALHOST_BYPASS;
+      } else {
+        process.env.LOCALHOST_BYPASS = originalBypass;
+      }
+    }
   });
 
   test('GET /api/images – returns empty array for new user', async () => {
@@ -550,6 +584,15 @@ describe('HTTP API', () => {
     assert.ok(r.body.uploaded.every(item => typeof item.url === 'string' && item.url.includes('/i/')));
   });
 
+  test('POST /api/images/upload – rejects SVG uploads', async () => {
+    const svgPayload = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+
+    const r = await uploadRequest('/api/images/upload', 'xss.svg', svgPayload, 'image/svg+xml');
+    assert.equal(r.status, 400, `Expected 400 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.ok(r.body.error);
+    assert.match(String(r.body.error), /only image files are allowed/i);
+  });
+
   test('POST /api/images/upload – persists optional comment and tags', async () => {
     const tinyPng = Buffer.from(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5K3A8AAAAASUVORK5CYII=',
@@ -577,6 +620,45 @@ describe('HTTP API', () => {
     assert.equal(r.status, 200);
     assert.ok(Array.isArray(r.body));
     assert.ok(r.body.length >= 1, 'should contain at least the uploaded image');
+  });
+
+  test('GET /api/stats/timeline – denies access to another user image when bypass disabled', async () => {
+    const allImages = await request('GET', '/api/images');
+    assert.equal(allImages.status, 200);
+    assert.ok(Array.isArray(allImages.body));
+    assert.ok(allImages.body.length >= 1, 'expected at least one image to exist');
+    const targetImageId = allImages.body[0].id;
+
+    const loginRegular = await request('POST', '/api/auth/login', {
+      body: { username: 'regular', password: 'RegPass1!' },
+    });
+    assert.equal(loginRegular.status, 200);
+    const regularCookie = loginRegular.cookies.map(c => c.split(';')[0]).join('; ');
+    assert.ok(regularCookie, 'regular user should receive session cookie');
+
+    const regularTokenResp = await request('POST', '/api/auth/tokens', {
+      cookies: regularCookie,
+      body: { label: 'regular-test-token', durationMinutes: 60 },
+    });
+    assert.equal(regularTokenResp.status, 201, `Expected 201 but got ${regularTokenResp.status}: ${JSON.stringify(regularTokenResp.body)}`);
+    assert.ok(regularTokenResp.body.token, 'regular user should get API token');
+
+    const originalBypass = process.env.LOCALHOST_BYPASS;
+    process.env.LOCALHOST_BYPASS = 'false';
+    try {
+      const denied = await request('GET', `/api/stats/timeline?imageId=${targetImageId}&days=30`, {
+        cookies: regularCookie,
+        headers: { Authorization: `Bearer ${regularTokenResp.body.token}` },
+      });
+      assert.equal(denied.status, 403, `Expected 403 but got ${denied.status}: ${JSON.stringify(denied.body)}`);
+      assert.ok(denied.body.error);
+    } finally {
+      if (originalBypass === undefined) {
+        delete process.env.LOCALHOST_BYPASS;
+      } else {
+        process.env.LOCALHOST_BYPASS = originalBypass;
+      }
+    }
   });
 
   test('GET /api/images?q=slug – search returns matching images', async () => {

@@ -25,6 +25,7 @@ function escHtml(s) {
   const selectAllHead = document.getElementById('select-all-head');
   const selectionCount = document.getElementById('selection-count');
   const btnDownload = document.getElementById('btn-download');
+  const btnDeleteSelected = document.getElementById('btn-delete-selected');
 
   let allImages = []; // cache of currently loaded images
   let selectedIds = new Set();
@@ -69,6 +70,7 @@ function escHtml(s) {
     bulkToolbar.style.display = allImages.length > 0 ? 'flex' : 'none';
     selectionCount.textContent = count > 0 ? `${count} image${count !== 1 ? 's' : ''} selected` : '';
     btnDownload.disabled = count === 0;
+    btnDeleteSelected.disabled = count === 0;
 
     // Sync header and toolbar "select all" checkboxes
     const visibleCheckboxes = tbody.querySelectorAll('.img-checkbox');
@@ -110,6 +112,7 @@ function escHtml(s) {
         credentials: 'same-origin',
         headers: {
           'Content-Type': 'application/json',
+          ...App.apiAuthHeader(),
           ...App.csrfHeader(),
         },
         body: JSON.stringify({ ids: [...selectedIds] }),
@@ -136,6 +139,50 @@ function escHtml(s) {
       btnDownload.textContent = origText;
       btnDownload.disabled = selectedIds.size === 0;
     }
+  });
+
+  // ── Bulk delete selected ─────────────────────────────────────────────────
+  btnDeleteSelected.addEventListener('click', async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+
+    const confirmed = confirm(
+      `Delete ${ids.length} selected image${ids.length !== 1 ? 's' : ''}? This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    const origDeleteText = btnDeleteSelected.textContent;
+    const origDownloadText = btnDownload.textContent;
+    btnDeleteSelected.disabled = true;
+    btnDownload.disabled = true;
+    btnDeleteSelected.textContent = '⏳ Deleting…';
+
+    let successCount = 0;
+    const failed = [];
+
+    for (const id of ids) {
+      try {
+        await App.api(`/api/images/${id}`, { method: 'DELETE' });
+        successCount += 1;
+      } catch (_) {
+        failed.push(id);
+      }
+    }
+
+    if (failed.length === 0) {
+      App.showAlert(alertEl, `Deleted ${successCount} image${successCount !== 1 ? 's' : ''}.`, 'success');
+    } else if (successCount > 0) {
+      App.showAlert(
+        alertEl,
+        `Deleted ${successCount} image${successCount !== 1 ? 's' : ''}. Failed to delete ${failed.length}.`
+      );
+    } else {
+      App.showAlert(alertEl, 'Failed to delete selected images.');
+    }
+
+    btnDeleteSelected.textContent = origDeleteText;
+    btnDownload.textContent = origDownloadText;
+    await loadImages();
   });
 
   // ── Load images ───────────────────────────────────────────────────────────

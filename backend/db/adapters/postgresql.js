@@ -86,9 +86,22 @@ class PostgresAdapter extends BaseAdapter {
         referrer TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS api_tokens (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token_hash TEXT UNIQUE NOT NULL,
+        label TEXT,
+        expires_at TIMESTAMPTZ NOT NULL,
+        last_used_at TIMESTAMPTZ,
+        revoked_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
       CREATE INDEX IF NOT EXISTS idx_images_slug ON images(slug);
       CREATE INDEX IF NOT EXISTS idx_images_user ON images(user_id);
       CREATE INDEX IF NOT EXISTS idx_views_image ON image_views(image_id);
+      CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
+      CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash);
     `);
 
     await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT');
@@ -168,6 +181,52 @@ class PostgresAdapter extends BaseAdapter {
 
   async verifyPassword(plainPassword, hash) {
     return bcrypt.compare(plainPassword, hash);
+  }
+
+  // ── API token helpers ────────────────────────────────────────────────────
+
+  async createApiToken({ userId, tokenHash, label, expiresAt }) {
+    const row = await this._queryOne(
+      `INSERT INTO api_tokens (user_id, token_hash, label, expires_at)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [userId, tokenHash, label || null, expiresAt]
+    );
+    return row.id;
+  }
+
+  async getActiveApiTokenByHash(tokenHash) {
+    return this._queryOne(
+      `SELECT t.id, t.user_id, t.expires_at, u.username, u.is_admin
+       FROM api_tokens t
+       JOIN users u ON u.id = t.user_id
+       WHERE t.token_hash = $1
+         AND t.revoked_at IS NULL
+         AND t.expires_at > NOW()`,
+      [tokenHash]
+    );
+  }
+
+  async listApiTokensByUser(userId) {
+    return this._queryAll(
+      `SELECT id, label, expires_at, last_used_at, revoked_at, created_at
+       FROM api_tokens
+       WHERE user_id = $1
+       ORDER BY created_at DESC`,
+      [userId]
+    );
+  }
+
+  async revokeApiToken(userId, tokenId) {
+    await this.pool.query(
+      `UPDATE api_tokens
+       SET revoked_at = NOW()
+       WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL`,
+      [tokenId, userId]
+    );
+  }
+
+  async touchApiTokenUsage(tokenId) {
+    await this.pool.query('UPDATE api_tokens SET last_used_at = NOW() WHERE id = $1', [tokenId]);
   }
 
   // ── Image helpers ─────────────────────────────────────────────────────────
@@ -292,22 +351,51 @@ class PostgresAdapter extends BaseAdapter {
     );
   }
 
-  async getViewsOverTime(imageId, days = 30) {
+  async getViewsOverTime(imageId, days = 30, userId = null) {
+    const hasImageFilter = Number.isInteger(imageId) && imageId > 0;
+    const hasUserFilter = Number.isInteger(userId) && userId > 0;
+
+    if (hasUserFilter) {
+      if (hasImageFilter) {
+        return this._queryAll(
+          `SELECT DATE(v.viewed_at) AS day, COUNT(*) AS views
+           FROM image_views v
+           JOIN images i ON i.id = v.image_id
+           WHERE v.viewed_at >= NOW() - INTERVAL '1 day' * $1
+             AND v.image_id = $2
+             AND i.user_id = $3
+           GROUP BY day
+           ORDER BY day`,
+          [days, imageId, userId]
+        );
+      }
+
+      return this._queryAll(
+        `SELECT DATE(v.viewed_at) AS day, COUNT(*) AS views
+         FROM image_views v
+         JOIN images i ON i.id = v.image_id
+         WHERE v.viewed_at >= NOW() - INTERVAL '1 day' * $1
+           AND i.user_id = $2
+         GROUP BY day
+         ORDER BY day`,
+        [days, userId]
+      );
+    }
+
     const base = `
       SELECT DATE(viewed_at) AS day, COUNT(*) AS views
       FROM image_views
       WHERE viewed_at >= NOW() - INTERVAL '1 day' * $1
     `;
 
-    if (imageId) {
+    if (hasImageFilter) {
       return this._queryAll(
         base + ' AND image_id = $2 GROUP BY day ORDER BY day',
         [days, imageId]
       );
     }
-    return this._queryAll(
-      base + ' GROUP BY day ORDER BY day', [days]
-    );
+
+    return this._queryAll(base + ' GROUP BY day ORDER BY day', [days]);
   }
 
   // ── Data export / import ──────────────────────────────────────────────────
@@ -316,7 +404,8 @@ class PostgresAdapter extends BaseAdapter {
     const users = await this._queryAll('SELECT * FROM users ORDER BY id');
     const images = await this._queryAll('SELECT * FROM images ORDER BY id');
     const imageViews = await this._queryAll('SELECT * FROM image_views ORDER BY id');
-    return { users, images, image_views: imageViews };
+    const apiTokens = await this._queryAll('SELECT * FROM api_tokens ORDER BY id');
+    return { users, images, image_views: imageViews, api_tokens: apiTokens };
   }
 
   async importData(data) {
@@ -325,6 +414,7 @@ class PostgresAdapter extends BaseAdapter {
       await client.query('BEGIN');
 
       // Clear existing data
+      await client.query('DELETE FROM api_tokens');
       await client.query('DELETE FROM image_views');
       await client.query('DELETE FROM images');
       await client.query('DELETE FROM users');
@@ -368,6 +458,27 @@ class PostgresAdapter extends BaseAdapter {
       if (data.image_views.length > 0) {
         const maxId = Math.max(...data.image_views.map(v => v.id));
         await client.query(`SELECT setval('image_views_id_seq', $1)`, [maxId]);
+      }
+
+      for (const t of (data.api_tokens || [])) {
+        await client.query(
+          `INSERT INTO api_tokens (id, user_id, token_hash, label, expires_at, last_used_at, revoked_at, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            t.id,
+            t.user_id,
+            t.token_hash,
+            t.label || null,
+            t.expires_at,
+            t.last_used_at || null,
+            t.revoked_at || null,
+            t.created_at,
+          ]
+        );
+      }
+      if ((data.api_tokens || []).length > 0) {
+        const maxId = Math.max(...data.api_tokens.map(t => t.id));
+        await client.query(`SELECT setval('api_tokens_id_seq', $1)`, [maxId]);
       }
 
       await client.query('COMMIT');

@@ -3,7 +3,11 @@
 
 // Redirect if already logged in
 fetch('/api/auth/me', { credentials: 'same-origin' })
-  .then(r => { if (r.ok) window.location.href = '/upload.html'; })
+  .then(r => {
+    if (!r.ok) return;
+    const hasToken = !!localStorage.getItem('imghoster_api_token');
+    window.location.href = hasToken ? '/upload.html' : '/token.html';
+  })
   .catch(() => {});
 
 const form = document.getElementById('login-form');
@@ -44,7 +48,7 @@ form.addEventListener('submit', async (e) => {
       return;
     }
 
-    window.location.href = '/upload.html';
+    window.location.href = '/token.html';
   } catch (_) {
     alertEl.className = 'alert alert-error show';
     alertEl.textContent = 'Network error. Please try again.';

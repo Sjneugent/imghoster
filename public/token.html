@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ImgHoster - API Token</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="navbar">
+      <a class="brand" href="/upload.html">🖼️ ImgHoster</a>
+      <span class="spacer"></span>
+      <span class="user-info" id="nav-user"></span>
+      <button class="btn-logout" id="btn-logout" type="button">Log out</button>
+    </nav>
+
+    <aside class="sidebar">
+      <nav>
+        <a href="upload.html"><span class="nav-icon">⬆️</span> Upload</a>
+        <a href="list.html"><span class="nav-icon">🗂️</span> My Images</a>
+        <a href="stats.html"><span class="nav-icon">📊</span> Statistics</a>
+        <a href="token.html"><span class="nav-icon">🔐</span> API Token</a>
+        <a href="dashboard.html" data-admin-only><span class="nav-icon">⚙️</span> Dashboard</a>
+      </nav>
+    </aside>
+
+    <main class="main-content">
+      <h1 class="page-title">API Token</h1>
+      <div class="alert" id="alert" role="alert"></div>
+
+      <div class="card" style="max-width:720px;margin-bottom:1.25rem">
+        <p style="font-weight:700;margin-bottom:.85rem">Create time-limited token</p>
+        <form id="token-form" novalidate>
+          <div class="form-group">
+            <label class="form-label" for="token-label">Label (optional)</label>
+            <input class="form-control" id="token-label" maxlength="80" placeholder="e.g. laptop cli" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="token-duration">Expires in</label>
+            <select class="form-control" id="token-duration">
+              <option value="60">1 hour</option>
+              <option value="360">6 hours</option>
+              <option value="720">12 hours</option>
+              <option value="1440">1 day</option>
+              <option value="10080">7 days</option>
+              <option value="43200">30 days</option>
+            </select>
+          </div>
+
+          <button class="btn btn-primary" id="token-create-btn" type="submit">Create token</button>
+        </form>
+      </div>
+
+      <div class="card" id="new-token-card" style="display:none;max-width:920px;margin-bottom:1.25rem">
+        <p style="font-weight:700;color:var(--success);margin-bottom:.55rem">New token generated</p>
+        <p class="form-hint" style="margin-bottom:.6rem">Copy this now. For security reasons it will not be shown again.</p>
+        <div class="url-box" style="margin-bottom:.7rem">
+          <span id="new-token-value" style="flex:1;word-break:break-all"></span>
+          <button class="copy-btn" id="copy-new-token" title="Copy token">📋</button>
+        </div>
+        <div style="display:flex;gap:.55rem;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" id="use-as-active" type="button">Use as active token</button>
+          <span class="form-hint" id="active-token-note"></span>
+        </div>
+      </div>
+
+      <div class="card" style="padding:0;max-width:920px">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Label</th>
+                <th>Expires</th>
+                <th>Last used</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tokens-tbody">
+              <tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-muted)">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script src="/js/token.js"></script>
+</body>
+</html>

@@ -20,6 +20,7 @@ Minimal personal image hosting with a Node.js/Express backend, SQLite database a
   - [Troubleshooting SSL Issues](#troubleshooting-ssl-issues)
 - [NGINX Configuration Walkthrough](#nginx-configuration-walkthrough)
 - [NGINX Shell Scripts](#nginx-shell-scripts)
+- [Load Testing Script](#load-testing-script)
 - [Localhost Auth Bypass](#localhost-auth-bypass)
 - [Logging](#logging)
 - [Directory Layout](#directory-layout)
@@ -37,9 +38,10 @@ Minimal personal image hosting with a Node.js/Express backend, SQLite database a
 | **List / Manage** | View, copy URL, and delete your images |
 | **Statistics** | Per-image view counts with a timeline chart |
 | **Dashboard** | Admin-only user management (create / delete users, reset passwords) |
+| **API token manager** | Post-login page to generate and revoke time-limited private API tokens |
 | **Public image URLs** | `/i/<slug>` – publicly accessible for embedding in GitHub READMEs etc. |
 | **REST API** | All management actions exposed as authenticated JSON endpoints |
-| **Anti-abuse** | Every management route requires an active session; rate-limiting on login |
+| **Anti-abuse** | REST management routes require a valid API token; rate-limiting on login |
 
 ---
 
@@ -97,6 +99,8 @@ npm run dev:secure     # development with auto-restart, bypass OFF
 ```
 
 The server listens on `http://127.0.0.1:3000` by default.
+
+After signing in, open the API Token page (`/token.html`) to generate a time-limited token for REST API calls when bypass is disabled.
 
 ### 5. Configure NGINX with SSL
 
@@ -643,6 +647,52 @@ and enables one mode on demand in `/etc/nginx/sites-enabled/`.
 
 ---
 
+## Load Testing Script
+
+Use the built-in load tester to exercise login, upload, image view, and delete
+operations at concurrency.
+
+Location:
+
+- `backend/scripts/loadtest.js`
+- `backend/scripts/loadtest.sh`
+
+Run from `backend/`:
+
+```bash
+npm run loadtest -- --username admin --password 'your-password'
+```
+
+Custom example:
+
+```bash
+npm run loadtest -- \
+  --baseUrl http://127.0.0.1:3000 \
+  --durationSec 120 \
+  --concurrency 50 \
+  --uploadWeight 30 \
+  --viewWeight 50 \
+  --deleteWeight 20 \
+  --username admin \
+  --password 'your-password'
+```
+
+Environment variables are also supported:
+
+- `LOADTEST_BASE_URL`
+- `LOADTEST_USERNAME`
+- `LOADTEST_PASSWORD`
+- `LOADTEST_DURATION_SEC`
+- `LOADTEST_CONCURRENCY`
+- `LOADTEST_UPLOAD_WEIGHT`
+- `LOADTEST_VIEW_WEIGHT`
+- `LOADTEST_DELETE_WEIGHT`
+
+The script outputs JSON summary metrics including total requests, requests per
+minute, success/failure counts, and latency percentiles per operation.
+
+---
+
 ## Localhost Auth Bypass
 
 For convenience during local development, requests from `127.0.0.1` / `::1`
@@ -652,7 +702,7 @@ environment variable:
 | Value | Behaviour |
 |---|---|
 | `true` (default) | Localhost requests skip auth — no login required |
-| `false` | All requests require a valid session |
+| `false` | Localhost requests must include auth/session and valid API token for protected REST routes |
 
 Toggle via npm scripts:
 
@@ -716,6 +766,7 @@ imghoster/
 │   ├── list.html
 │   ├── stats.html
 │   ├── dashboard.html
+│   ├── token.html
 │   ├── css/style.css
 │   └── js/app.js
 ├── uploads/                # Uploaded images (gitignored)
@@ -742,7 +793,14 @@ imghoster/
 
 ## REST API Reference
 
-All endpoints below (except login and `/i/:slug`) require a valid session cookie.
+Protected REST routes (`/api/images`, `/api/stats`, `/api/admin`) require a valid API token using one of:
+
+- `Authorization: Bearer <token>`
+- `x-api-token: <token>`
+
+Localhost requests can bypass this only when `LOCALHOST_BYPASS=true`.
+
+Session-auth endpoints under `/api/auth/*` continue to use the normal login session cookie.
 
 ### Auth
 
@@ -751,6 +809,9 @@ All endpoints below (except login and `/i/:slug`) require a valid session cookie
 | POST | `/api/auth/login` | `{username, password, rememberMe}` | Login |
 | POST | `/api/auth/logout` | — | Logout |
 | GET | `/api/auth/me` | — | Current user info + CSRF token |
+| GET | `/api/auth/tokens` | — | List current user's API tokens (metadata only) |
+| POST | `/api/auth/tokens` | `{label?, durationMinutes}` | Create a new API token (token is returned once) |
+| DELETE | `/api/auth/tokens/:id` | — | Revoke one of your API tokens |
 
 ### Images
 

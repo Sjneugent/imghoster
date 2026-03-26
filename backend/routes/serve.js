@@ -33,7 +33,16 @@ router.get('/:slug', async (req, res) => {
 
     // Cache-friendly headers
     res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.setHeader('Content-Type', image.mime_type);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    const isSvg = image.mime_type === 'image/svg+xml' || path.extname(image.filename).toLowerCase() === '.svg';
+    if (isSvg) {
+      // Never render user-uploaded SVG inline to avoid active content execution.
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', 'attachment; filename="image.svg"');
+    } else {
+      res.setHeader('Content-Type', image.mime_type);
+    }
 
     // Serve file using the filename relative to the uploads root directory.
     // Using { root: UPLOADS_DIR } ensures safe path resolution and avoids

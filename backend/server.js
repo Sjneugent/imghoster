@@ -13,6 +13,7 @@ const Database = require('better-sqlite3');
 const SqliteSessionStore = require('express-session-better-sqlite3');
 const { initDB } = require('./db');
 const { isLocalhost } = require('./middleware/requireAuth');
+const { apiTokenMiddleware, requireApiToken } = require('./middleware/apiToken');
 const logger = require('./logger');
 
 const PORT = process.env.PORT || 3000;
@@ -124,6 +125,9 @@ function csrfProtect(req, res, next) {
   // Localhost bypasses CSRF
   if (isLocalhost(req)) return next();
 
+  // API token-authenticated requests do not require CSRF synchronizer token.
+  if (req.apiTokenAuthenticated) return next();
+
   const token = req.headers['x-csrf-token'];
   if (!token || !req.session.csrfToken || token !== req.session.csrfToken) {
     return res.status(403).json({ error: 'CSRF check failed.' });
@@ -135,11 +139,14 @@ function csrfProtect(req, res, next) {
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 app.use(express.static(PUBLIC_DIR));
 
+// Parse and validate API token (if supplied).
+app.use(apiTokenMiddleware);
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/auth', loginLimiter, require('./routes/auth'));
-app.use('/api/images', generalLimiter, csrfProtect, require('./routes/images'));
-app.use('/api/admin', generalLimiter, csrfProtect, require('./routes/admin'));
-app.use('/api/stats', generalLimiter, require('./routes/stats'));
+app.use('/api/images', generalLimiter, requireApiToken, csrfProtect, require('./routes/images'));
+app.use('/api/admin', generalLimiter, requireApiToken, csrfProtect, require('./routes/admin'));
+app.use('/api/stats', generalLimiter, requireApiToken, require('./routes/stats'));
 app.use('/i', generalLimiter, require('./routes/serve')); // public image serving
 
 // Root redirect

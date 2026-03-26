@@ -3,8 +3,17 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { getUserByUsername, getUserByEmail, verifyPassword, createUser } = require('../db');
-const { isLocalhost } = require('../middleware/requireAuth');
+const {
+  getUserByUsername,
+  getUserByEmail,
+  verifyPassword,
+  createUser,
+  createApiToken,
+  listApiTokensByUser,
+  revokeApiToken,
+} = require('../db');
+const { isLocalhost, requireAuth } = require('../middleware/requireAuth');
+const { hashToken } = require('../middleware/apiToken');
 const logger = require('../logger');
 
 function buildCaptchaText(length = 6) {
@@ -80,6 +89,10 @@ function isValidUsername(username) {
   return /^[a-zA-Z0-9_-]{3,40}$/.test(username);
 }
 
+function buildPlainApiToken() {
+  return `imh_${crypto.randomBytes(32).toString('hex')}`;
+}
+
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
   try {
@@ -95,24 +108,33 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid username or password.' });
     }
 
-    // Extend session lifetime when "remember me" is checked
-    if (rememberMe) {
-      req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
-    } else {
-      req.session.cookie.expires = false; // session cookie
-    }
+    req.session.regenerate((regenErr) => {
+      if (regenErr) {
+        logger.error('Session regeneration failed during login', { error: regenErr.message });
+        return res.status(500).json({ error: 'Internal server error.' });
+      }
 
-    req.session.userId = user.id;
-    req.session.username = user.username;
-    req.session.isAdmin = user.is_admin === 1;
+      // Extend session lifetime when "remember me" is checked
+      if (rememberMe) {
+        req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
+      } else {
+        req.session.cookie.expires = false; // session cookie
+      }
 
-    logger.info('User logged in', { username: user.username, userId: user.id });
+      req.session.userId = user.id;
+      req.session.username = user.username;
+      req.session.isAdmin = user.is_admin === 1;
+      // Rotate CSRF token after privilege-changing auth event.
+      req.session.csrfToken = crypto.randomBytes(32).toString('hex');
 
-    res.json({
-      id: user.id,
-      username: user.username,
-      isAdmin: user.is_admin === 1,
-      csrfToken: req.session.csrfToken,
+      logger.info('User logged in', { username: user.username, userId: user.id });
+
+      return res.json({
+        id: user.id,
+        username: user.username,
+        isAdmin: user.is_admin === 1,
+        csrfToken: req.session.csrfToken,
+      });
     });
   } catch (err) {
     logger.error('Login error', { error: err.message });
@@ -211,6 +233,77 @@ router.post('/logout', (req, res) => {
     logger.info('User logged out', { username });
     res.json({ message: 'Logged out successfully.' });
   });
+});
+
+// GET /api/auth/tokens
+router.get('/tokens', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const tokens = await listApiTokensByUser(userId);
+    res.json(tokens.map((t) => ({
+      id: t.id,
+      label: t.label,
+      expiresAt: t.expires_at,
+      createdAt: t.created_at,
+      lastUsedAt: t.last_used_at,
+      revokedAt: t.revoked_at,
+    })));
+  } catch (err) {
+    logger.error('Failed to list API tokens', { error: err.message });
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to list API tokens.' });
+    }
+  }
+});
+
+// POST /api/auth/tokens
+router.post('/tokens', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const label = String(req.body.label || '').trim().slice(0, 80) || null;
+    const durationMinutes = Math.min(Math.max(Number(req.body.durationMinutes) || 60, 5), 60 * 24 * 30);
+
+    const plainToken = buildPlainApiToken();
+    const expiresAt = new Date(Date.now() + durationMinutes * 60 * 1000).toISOString();
+    const id = await createApiToken({
+      userId,
+      tokenHash: hashToken(plainToken),
+      label,
+      expiresAt,
+    });
+
+    logger.info('API token created', { userId, tokenId: id, expiresAt });
+    res.status(201).json({
+      id,
+      token: plainToken,
+      expiresAt,
+      label,
+      message: 'Store this token now. It will not be shown again.',
+    });
+  } catch (err) {
+    logger.error('Failed to create API token', { error: err.message });
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to create API token.' });
+    }
+  }
+});
+
+// DELETE /api/auth/tokens/:id
+router.delete('/tokens/:id', requireAuth, async (req, res) => {
+  try {
+    const tokenId = Number(req.params.id);
+    if (!Number.isInteger(tokenId) || tokenId <= 0) {
+      return res.status(400).json({ error: 'Invalid token id.' });
+    }
+
+    await revokeApiToken(req.session.userId, tokenId);
+    res.json({ message: 'Token revoked.' });
+  } catch (err) {
+    logger.error('Failed to revoke API token', { error: err.message });
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to revoke API token.' });
+    }
+  }
 });
 
 // GET /api/auth/me  – returns current session info + CSRF token

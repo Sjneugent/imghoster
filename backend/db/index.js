@@ -96,6 +96,26 @@ async function verifyPassword(plainPassword, hash) {
   return getAdapter().verifyPassword(plainPassword, hash);
 }
 
+async function createApiToken(data) {
+  return getAdapter().createApiToken(data);
+}
+
+async function getActiveApiTokenByHash(tokenHash) {
+  return getAdapter().getActiveApiTokenByHash(tokenHash);
+}
+
+async function listApiTokensByUser(userId) {
+  return getAdapter().listApiTokensByUser(userId);
+}
+
+async function revokeApiToken(userId, tokenId) {
+  return getAdapter().revokeApiToken(userId, tokenId);
+}
+
+async function touchApiTokenUsage(tokenId) {
+  return getAdapter().touchApiTokenUsage(tokenId);
+}
+
 async function createImage(data) {
   return getAdapter().createImage(data);
 }
@@ -140,8 +160,8 @@ async function getImageStats(userId) {
   return getAdapter().getImageStats(userId);
 }
 
-async function getViewsOverTime(imageId, days) {
-  return getAdapter().getViewsOverTime(imageId, days);
+async function getViewsOverTime(imageId, days, userId) {
+  return getAdapter().getViewsOverTime(imageId, days, userId);
 }
 
 async function exportData() {
@@ -163,6 +183,11 @@ module.exports = {
   deleteUser,
   updateUserPassword,
   verifyPassword,
+  createApiToken,
+  getActiveApiTokenByHash,
+  listApiTokensByUser,
+  revokeApiToken,
+  touchApiTokenUsage,
   createImage,
   getImageBySlug,
   getImageById,

@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
-const archiver = require('archiver');
+const yazl = require('yazl');
 const {
   createImage,
   getImageById,
@@ -28,7 +28,6 @@ const ALLOWED_MIME = new Set([
   'image/png',
   'image/gif',
   'image/webp',
-  'image/svg+xml',
 ]);
 const COMPRESSIBLE_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
@@ -326,16 +325,14 @@ router.post('/download', requireAuth, async (req, res) => {
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', 'attachment; filename="images.zip"');
 
-    const archive = archiver('zip', { zlib: { level: 5 } });
-
-    archive.on('error', (err) => {
-      logger.error('Archive error', { error: err.message });
+    const zipfile = new yazl.ZipFile();
+    zipfile.outputStream.on('error', (err) => {
+      logger.error('Zip stream error', { error: err.message });
       if (!res.headersSent) {
         res.status(500).json({ error: 'Failed to create zip archive.' });
       }
     });
-
-    archive.pipe(res);
+    zipfile.outputStream.pipe(res);
 
     // Use slug + original extension as the filename inside the zip
     const usedNames = new Set();
@@ -347,10 +344,10 @@ router.post('/download', requireAuth, async (req, res) => {
         name = `${img.slug}_${img.id}${ext}`;
       }
       usedNames.add(name);
-      archive.file(path.join(UPLOADS_DIR, img.filename), { name });
+      zipfile.addFile(path.join(UPLOADS_DIR, img.filename), name);
     }
 
-    archive.finalize();
+    zipfile.end();
 
     logger.info('Bulk download', { count: available.length, ids: safeIds });
   } catch (err) {

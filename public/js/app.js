@@ -3,10 +3,41 @@
 
 const App = (() => {
   let _csrfToken = null;
+  const API_TOKEN_STORAGE_KEY = 'imghoster_api_token';
+
+  function getApiToken() {
+    try {
+      return localStorage.getItem(API_TOKEN_STORAGE_KEY) || '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function setApiToken(token) {
+    try {
+      const next = String(token || '').trim();
+      if (!next) {
+        localStorage.removeItem(API_TOKEN_STORAGE_KEY);
+      } else {
+        localStorage.setItem(API_TOKEN_STORAGE_KEY, next);
+      }
+    } catch (_) {
+      // ignore storage errors
+    }
+  }
+
+  function apiAuthHeader() {
+    const token = getApiToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
 
   /* ── API helper ──────────────────────────────────────────────────────────── */
   async function api(path, options = {}) {
-    const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+    const headers = {
+      ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      ...apiAuthHeader(),
+      ...(options.headers || {}),
+    };
     // Attach CSRF token for state-mutating requests
     const method = (options.method || 'GET').toUpperCase();
     if (_csrfToken && method !== 'GET' && method !== 'HEAD') {
@@ -102,5 +133,19 @@ const App = (() => {
     return _csrfToken ? { 'X-CSRF-Token': _csrfToken } : {};
   }
 
-  return { api, showAlert, hideAlert, copyText, formatBytes, formatDate, requireAuth, logout, initNavbar, csrfHeader };
+  return {
+    api,
+    showAlert,
+    hideAlert,
+    copyText,
+    formatBytes,
+    formatDate,
+    requireAuth,
+    logout,
+    initNavbar,
+    csrfHeader,
+    getApiToken,
+    setApiToken,
+    apiAuthHeader,
+  };
 })();

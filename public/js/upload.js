@@ -146,7 +146,7 @@
       const res = await fetch('/api/images/upload', {
         method: 'POST',
         credentials: 'same-origin',
-        headers: App.csrfHeader(),
+        headers: { ...App.csrfHeader(), ...App.apiAuthHeader() },
         body: fd,
       });
       const data = await res.json();
