@@ -13,6 +13,7 @@ const Database = require('better-sqlite3');
 const SqliteSessionStore = require('express-session-better-sqlite3');
 const { initDB } = require('./db');
 const { isLocalhost } = require('./middleware/requireAuth');
+const logger = require('./logger');
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -140,15 +141,33 @@ app.get('/', (_req, res) => res.redirect('/login.html'));
 app.use((_req, res) => res.status(404).json({ error: 'Not found.' }));
 
 // eslint-disable-next-line no-unused-vars
-app.use((err, _req, res, _next) => {
-  console.error(err);
-  res.status(500).json({ error: 'Internal server error.' });
+app.use((err, req, res, _next) => {
+  logger.error('Unhandled request error', {
+    method: req.method,
+    url: req.originalUrl,
+    error: err.message,
+    stack: err.stack,
+  });
+  if (!res.headersSent) {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// ── Process-level error handlers ──────────────────────────────────────────────
+process.on('uncaughtException', (err) => {
+  logger.error('Uncaught exception', { error: err.message, stack: err.stack });
+});
+
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  const stack = reason instanceof Error ? reason.stack : undefined;
+  logger.error('Unhandled rejection', { error: msg, stack });
 });
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 initDB(DB_PATH);
 const server = app.listen(PORT, HOST, () => {
-  console.log(`ImgHoster listening on http://${HOST}:${server.address().port}`);
+  logger.info(`ImgHoster listening on http://${HOST}:${server.address().port}`);
 });
 
 module.exports = server;

@@ -338,4 +338,85 @@ describe('HTTP API', () => {
     assert.ok(Array.isArray(r.body));
     assert.ok(r.body.length >= 1, 'should contain at least the uploaded image');
   });
+
+  test('GET /i/:slug – serving uploaded image returns 200', async () => {
+    // First, get the slug of the image we uploaded
+    const listR = await request('GET', '/api/images');
+    assert.equal(listR.status, 200);
+    assert.ok(listR.body.length >= 1);
+    const slug = listR.body[0].slug;
+
+    const r = await request('GET', `/i/${slug}`);
+    assert.equal(r.status, 200, `Expected 200 but got ${r.status}`);
+  });
+
+  test('GET /i/nonexistent-slug – returns 404', async () => {
+    const r = await request('GET', '/i/nonexistent-slug-that-does-not-exist');
+    assert.equal(r.status, 404);
+  });
+
+  test('GET /api/images/99999 – non-existent image returns 404', async () => {
+    const r = await request('GET', '/api/images/99999', { cookies: sessionCookie });
+    assert.equal(r.status, 404);
+    assert.ok(r.body.error);
+  });
+
+  test('DELETE /api/images/99999 – non-existent image returns 404', async () => {
+    const r = await request('DELETE', '/api/images/99999', { cookies: sessionCookie });
+    assert.equal(r.status, 404);
+    assert.ok(r.body.error);
+  });
+
+  test('GET /nonexistent-route – returns 404 JSON', async () => {
+    const r = await request('GET', '/api/this-does-not-exist');
+    assert.equal(r.status, 404);
+    assert.ok(r.body.error);
+  });
+});
+
+// ── Localhost bypass toggle tests ─────────────────────────────────────────────
+describe('Localhost bypass toggle', () => {
+  test('isLocalhost returns false when LOCALHOST_BYPASS=false', () => {
+    const original = process.env.LOCALHOST_BYPASS;
+    process.env.LOCALHOST_BYPASS = 'false';
+
+    // Re-require to pick up the env var (the function reads env on each call)
+    const { isLocalhost } = require('../middleware/requireAuth');
+    const fakeReq = { ip: '127.0.0.1' };
+    assert.equal(isLocalhost(fakeReq), false, 'isLocalhost should return false when bypass is disabled');
+
+    // Restore
+    if (original === undefined) {
+      delete process.env.LOCALHOST_BYPASS;
+    } else {
+      process.env.LOCALHOST_BYPASS = original;
+    }
+  });
+
+  test('isLocalhost returns true when LOCALHOST_BYPASS is unset', () => {
+    const original = process.env.LOCALHOST_BYPASS;
+    delete process.env.LOCALHOST_BYPASS;
+
+    const { isLocalhost } = require('../middleware/requireAuth');
+    const fakeReq = { ip: '127.0.0.1' };
+    assert.equal(isLocalhost(fakeReq), true, 'isLocalhost should return true when bypass is enabled by default');
+
+    // Restore
+    if (original !== undefined) {
+      process.env.LOCALHOST_BYPASS = original;
+    }
+  });
+
+  test('isLocalhost returns false for non-localhost IP regardless of setting', () => {
+    const original = process.env.LOCALHOST_BYPASS;
+    delete process.env.LOCALHOST_BYPASS;
+
+    const { isLocalhost } = require('../middleware/requireAuth');
+    const fakeReq = { ip: '192.168.1.100' };
+    assert.equal(isLocalhost(fakeReq), false, 'isLocalhost should return false for non-localhost IP');
+
+    if (original !== undefined) {
+      process.env.LOCALHOST_BYPASS = original;
+    }
+  });
 });

@@ -1,6 +1,17 @@
 'use strict';
 
+/**
+ * Check whether the localhost auth bypass is enabled.
+ * Set LOCALHOST_BYPASS=false to disable it (any other value keeps it on).
+ */
+function localhostBypassEnabled() {
+  const val = process.env.LOCALHOST_BYPASS;
+  if (val === undefined || val === null) return true; // default: enabled
+  return val !== 'false' && val !== '0';
+}
+
 function isLocalhost(req) {
+  if (!localhostBypassEnabled()) return false;
   const ip = req.ip;
   return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
 }

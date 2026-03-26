@@ -6,7 +6,9 @@
   "scripts": {
     "install:backend": "cd backend && npm install",
     "start": "cd backend && npm start",
+    "start:secure": "cd backend && npm run start:secure",
     "dev": "cd backend && npm run dev",
+    "dev:secure": "cd backend && npm run dev:secure",
     "seed": "cd backend && node seed.js",
     "test": "cd backend && npm test"
   }
