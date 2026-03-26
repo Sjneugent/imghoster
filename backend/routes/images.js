@@ -13,8 +13,9 @@ const {
   listAllImages,
   deleteImage,
   slugExists,
+  listUsers,
 } = require('../db');
-const { requireAuth } = require('../middleware/requireAuth');
+const { requireAuth, isLocalhost } = require('../middleware/requireAuth');
 
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', '..', 'uploads');
 const ALLOWED_MIME = new Set([
@@ -60,6 +61,13 @@ function sanitiseSlug(raw) {
     .slice(0, 120);
 }
 
+// Return a fallback user ID for unauthenticated localhost requests
+function getLocalhostFallbackUserId() {
+  const users = listUsers();
+  const admin = users.find(u => u.is_admin === 1);
+  return admin ? admin.id : (users.length > 0 ? users[0].id : null);
+}
+
 // ── Upload ────────────────────────────────────────────────────────────────────
 // POST /api/images/upload
 router.post('/upload', requireAuth, upload.single('image'), (req, res) => {
@@ -78,13 +86,19 @@ router.post('/upload', requireAuth, upload.single('image'), (req, res) => {
     return res.status(409).json({ error: `The URL slug "${slug}" is already taken.` });
   }
 
+  const userId = req.session.userId || (isLocalhost(req) ? getLocalhostFallbackUserId() : null);
+  if (!userId) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(500).json({ error: 'No user available to associate upload with.' });
+  }
+
   const id = createImage({
     filename: req.file.filename,
     originalName: req.file.originalname,
     slug,
     mimeType: req.file.mimetype,
     size: req.file.size,
-    userId: req.session.userId,
+    userId,
   });
 
   const host = req.get('host') || 'localhost';
@@ -101,7 +115,10 @@ router.post('/upload', requireAuth, upload.single('image'), (req, res) => {
 // GET /api/images          – own images
 // GET /api/images?all=1    – all images (admin only)
 router.get('/', requireAuth, (req, res) => {
-  if (req.query.all === '1' && req.session.isAdmin) {
+  if (isLocalhost(req) && !req.session.userId) {
+    return res.json(listAllImages());
+  }
+  if (req.query.all === '1' && (req.session.isAdmin || isLocalhost(req))) {
     return res.json(listAllImages());
   }
   res.json(listImagesByUser(req.session.userId));
@@ -113,8 +130,8 @@ router.get('/:id', requireAuth, (req, res) => {
   const image = getImageById(Number(req.params.id));
   if (!image) return res.status(404).json({ error: 'Image not found.' });
 
-  // Non-admins can only see their own images
-  if (!req.session.isAdmin && image.user_id !== req.session.userId) {
+  // Non-admins can only see their own images; localhost gets full access
+  if (!isLocalhost(req) && !req.session.isAdmin && image.user_id !== req.session.userId) {
     return res.status(403).json({ error: 'Forbidden.' });
   }
   res.json(image);
@@ -126,7 +143,7 @@ router.delete('/:id', requireAuth, (req, res) => {
   const image = getImageById(Number(req.params.id));
   if (!image) return res.status(404).json({ error: 'Image not found.' });
 
-  if (!req.session.isAdmin && image.user_id !== req.session.userId) {
+  if (!isLocalhost(req) && !req.session.isAdmin && image.user_id !== req.session.userId) {
     return res.status(403).json({ error: 'Forbidden.' });
   }
 

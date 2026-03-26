@@ -274,4 +274,68 @@ describe('HTTP API', () => {
     assert.equal(r.status, 200);
     assert.ok(Array.isArray(r.body));
   });
+
+  // Helper: perform a multipart upload request
+  function uploadRequest(urlPath, filename, fileContent, mimeType, { cookies = '' } = {}) {
+    return new Promise((resolve, reject) => {
+      const url = new URL(urlPath, baseUrl);
+      const boundary = '----TestBoundary' + Date.now();
+      const body = Buffer.concat([
+        Buffer.from(
+          `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="image"; filename="${filename}"\r\n` +
+          `Content-Type: ${mimeType}\r\n\r\n`
+        ),
+        fileContent,
+        Buffer.from(`\r\n--${boundary}--\r\n`),
+      ]);
+
+      const opts = {
+        method: 'POST',
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname,
+        headers: {
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': body.length,
+          Cookie: cookies,
+        },
+      };
+
+      const req = http.request(opts, (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          let parsed;
+          try { parsed = JSON.parse(data); } catch { parsed = data; }
+          resolve({ status: res.statusCode, body: parsed });
+        });
+      });
+
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    });
+  }
+
+  test('POST /api/images/upload – localhost without auth can upload', async () => {
+    // Create a minimal valid JPEG (smallest valid JPEG is ~107 bytes)
+    const jpegHeader = Buffer.from([
+      0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
+      0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
+    ]);
+
+    const r = await uploadRequest('/api/images/upload', 'test.jpg', jpegHeader, 'image/jpeg');
+    assert.equal(r.status, 201, `Expected 201 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.ok(r.body.id, 'should return image id');
+    assert.ok(r.body.slug, 'should return slug');
+    assert.ok(r.body.url, 'should return url');
+  });
+
+  test('GET /api/images – localhost without auth returns images', async () => {
+    const r = await request('GET', '/api/images');
+    assert.equal(r.status, 200);
+    assert.ok(Array.isArray(r.body));
+    assert.ok(r.body.length >= 1, 'should contain at least the uploaded image');
+  });
 });
