@@ -1,8 +1,6 @@
-'use strict';
-
-const crypto = require('crypto');
-const { getActiveApiTokenByHash, touchApiTokenUsage } = require('../db');
-const { isLocalhost } = require('./requireAuth');
+import crypto from 'node:crypto';
+import { getActiveApiTokenByHash, touchApiTokenUsage } from '../db/index.js';
+import { isLocalhost } from './requireAuth.js';
 
 function extractToken(req) {
   const auth = req.headers.authorization;
@@ -50,7 +48,7 @@ function requireApiToken(req, res, next) {
   return res.status(401).json({ error: 'Valid API token required.' });
 }
 
-module.exports = {
+export {
   apiTokenMiddleware,
   requireApiToken,
   extractToken,

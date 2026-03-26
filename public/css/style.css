@@ -20,6 +20,23 @@
   --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
+[data-theme="dark"] {
+  --bg: #0f1220;
+  --surface: #171c2f;
+  --surface2: #212845;
+  --border: #313957;
+  --text: #eef2ff;
+  --text-muted: #a7b2d8;
+  --accent: #7c9dff;
+  --accent-hover: #9bb4ff;
+  --danger: #ff6b6b;
+  --danger-hover: #ff8d8d;
+  --success: #58d68d;
+  --warning: #f8c471;
+  --shadow: 0 2px 14px rgba(0, 0, 0, .35);
+  --shadow-lg: 0 10px 36px rgba(0, 0, 0, .45);
+}
+
 html { height: 100%; }
 
 body {
@@ -80,6 +97,85 @@ a:hover { text-decoration: underline; }
   transition: background .15s;
 }
 .navbar .btn-logout:hover { background: rgba(255,255,255,.35); }
+
+/* ── Theme toggle ─────────────────────────────────────────────────────────── */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  padding: .35rem .5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  user-select: none;
+}
+
+.theme-toggle-inline {
+  position: static;
+  margin-right: .25rem;
+}
+
+.theme-toggle-floating {
+  position: fixed;
+  top: .85rem;
+  right: 1rem;
+  z-index: 1200;
+}
+
+.theme-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  border: 0;
+  padding: 0;
+  clip: rect(0, 0, 0, 0);
+  overflow: hidden;
+}
+
+.theme-toggle-track {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  transition: background .15s ease;
+}
+
+.theme-toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  transition: transform .15s ease;
+}
+
+.theme-toggle input:checked + .theme-toggle-track::after {
+  transform: translateX(18px);
+}
+
+.theme-toggle input:focus-visible + .theme-toggle-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.theme-toggle-text {
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 34px;
+}
+
+body.page-login .theme-toggle-floating {
+  top: 1rem;
+  right: 1rem;
+}
 
 /* ── Sidebar ──────────────────────────────────────────────────────────────── */
 .sidebar {

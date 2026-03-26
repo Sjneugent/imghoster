@@ -1,15 +1,12 @@
-'use strict';
-
 /**
  * Backend unit & integration tests using Node.js built-in test runner.
  * Run:  cd backend && node --test tests/
  */
 
-const { test, describe, before, after, beforeEach } = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const http = require('node:http');
+import { test, describe, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import http from 'node:http';
 
 // ── Test DB setup ─────────────────────────────────────────────────────────────
 const TEST_DB = '/tmp/imghoster_test.db';
@@ -27,11 +24,12 @@ process.env.UPLOADS_DIR = TEST_UPLOADS;
 process.env.PORT = '0'; // random port
 process.env.NODE_ENV = 'test';
 
-const db = require('../db');
+let db;
 
 // ── DB unit tests ─────────────────────────────────────────────────────────────
 describe('Database helpers', () => {
   before(async () => {
+    db = await import('../db/index.js');
     await db.initDB(TEST_DB);
   });
 
@@ -188,13 +186,14 @@ describe('HTTP API', () => {
     if (fs.existsSync(HTTP_DB)) fs.unlinkSync(HTTP_DB);
     process.env.DB_PATH = HTTP_DB;
 
-    const dbHttp = require('../db');
+    const dbHttp = await import('../db/index.js');
     await dbHttp.initDB(HTTP_DB);
     adminId = await dbHttp.createUser('admin', 'AdminPass1!', true);
     await dbHttp.createUser('regular', 'RegPass1!', false);
 
     // server.js now exports a Promise that resolves to the server
-    server = await require('../server');
+    const { default: serverPromise } = await import('../server.js');
+    server = await serverPromise;
 
     // Wait for the server to start listening
     await new Promise((resolve, reject) => {
@@ -740,13 +739,34 @@ describe('HTTP API', () => {
     assert.equal(r.status, 404);
     assert.ok(r.body.error);
   });
+
+  test('POST /api/images/check-hash – returns 200 for unique file', async () => {
+    const r = await request('POST', '/api/images/check-hash', { body: { fileHash: 'abc123def456' } });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.isDuplicate, false);
+    assert.ok(r.body.message);
+
+    test('POST /api/images/check-hash – includes descriptive error message', async () => {
+      // Simply verify the message format
+      const r = await request('POST', '/api/images/check-hash', { body: { fileHash: 'test-hash-xyz' } });
+      assert.equal(r.status, 200);
+      assert.equal(r.body.isDuplicate, false);
+      assert.match(r.body.message, /unique/i);
+    });
+  });
+
+
 });
 
 // ── Localhost bypass toggle tests ─────────────────────────────────────────────
 describe('Localhost bypass toggle', () => {
   // isLocalhost reads process.env.LOCALHOST_BYPASS on every call,
   // so we only need to change the env var before calling the function.
-  const { isLocalhost } = require('../middleware/requireAuth');
+  let isLocalhost;
+
+  before(async () => {
+    ({ isLocalhost } = await import('../middleware/requireAuth.js'));
+  });
 
   test('isLocalhost returns false when LOCALHOST_BYPASS=false', () => {
     const original = process.env.LOCALHOST_BYPASS;

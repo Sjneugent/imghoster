@@ -1,6 +1,8 @@
 /* upload.js – upload page logic */
 'use strict';
 
+import { validateFileBeforeUpload } from './hash-utils.js';
+
 (async () => {
   const me = await App.requireAuth();
   if (!me) return;
@@ -32,6 +34,14 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  function showDuplicateAlertWithLink(message, slug) {
+    const safeMessage = escapeHtml(message || 'Image already uploaded. Please upload a unique image.');
+    const safeSlugText = escapeHtml(slug || 'existing image');
+    const safeHref = `/i/${encodeURIComponent(slug || '')}`;
+    alertEl.className = 'alert alert-error show';
+    alertEl.innerHTML = `${safeMessage} <a href="${safeHref}" target="_blank" rel="noopener">${safeSlugText}</a>`;
   }
 
   function renderPreviewGrid(files) {
@@ -129,20 +139,44 @@
       return;
     }
 
-    const fd = new FormData();
-    selectedFiles.forEach((f) => fd.append('image', f));
-    const slug = document.getElementById('slug').value.trim();
-    const comment = document.getElementById('comment').value.trim();
-    const tags = document.getElementById('tags').value.trim();
-    if (slug) fd.append('slug', slug);
-    if (comment) fd.append('comment', comment);
-    if (tags) fd.append('tags', tags);
-    fd.append('compress', document.getElementById('compress-image').checked ? 'true' : 'false');
-
     uploadBtn.disabled = true;
-    uploadBtn.innerHTML = '<span class="spinner"></span> Uploading\u2026';
+    uploadBtn.innerHTML = '<span class="spinner"></span> Checking for duplicates\u2026';
 
     try {
+      // Check for duplicates (only for single file uploads)
+      let fileHash = null;
+      if (selectedFiles.length === 1) {
+        const validation = await validateFileBeforeUpload(selectedFiles[0]);
+        if (!validation.success) {
+          throw new Error(validation.message || 'Failed to validate file');
+        }
+        fileHash = validation.fileHash;
+        if (validation.isDuplicate) {
+          const msg = validation.message || 'Image already uploaded. Please upload a unique image.';
+          if (validation.existing) {
+            showDuplicateAlertWithLink(msg, validation.existing.slug);
+          } else {
+            App.showAlert(alertEl, msg);
+          }
+          uploadBtn.disabled = false;
+          uploadBtn.innerHTML = '\u2b06\ufe0f Upload';
+          return;
+        }
+      }
+
+      uploadBtn.innerHTML = '<span class="spinner"></span> Uploading\u2026';
+
+      const fd = new FormData();
+      selectedFiles.forEach((f) => fd.append('image', f));
+      const slug = document.getElementById('slug').value.trim();
+      const comment = document.getElementById('comment').value.trim();
+      const tags = document.getElementById('tags').value.trim();
+      if (slug) fd.append('slug', slug);
+      if (comment) fd.append('comment', comment);
+      if (tags) fd.append('tags', tags);
+      if (fileHash) fd.append('fileHash', fileHash);
+      fd.append('compress', document.getElementById('compress-image').checked ? 'true' : 'false');
+
       const res = await fetch('/api/images/upload', {
         method: 'POST',
         credentials: 'same-origin',

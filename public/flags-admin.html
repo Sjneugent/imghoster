@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Content Flags – ImgHoster Admin</title>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    .flags-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .status-badges {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+    }
+
+    .status-badge {
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .status-badge.all {
+      background: var(--accent);
+      color: white;
+    }
+
+    .status-badge.pending {
+      background: rgba(239, 68, 68, 0.1);
+      color: #ef4444;
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+
+    .status-badge.pending.active,
+    .status-badge.all:hover {
+      background: #ef4444;
+      color: white;
+      border-color: #ef4444;
+    }
+
+    .status-badge.reviewing {
+      background: rgba(245, 158, 11, 0.1);
+      color: #f59e0b;
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+
+    .status-badge.reviewing.active {
+      background: #f59e0b;
+      color: white;
+      border-color: #f59e0b;
+    }
+
+    .status-badge.resolved {
+      background: rgba(34, 197, 94, 0.1);
+      color: #22c55e;
+      border-color: rgba(34, 197, 94, 0.3);
+    }
+
+    .status-badge.resolved.active {
+      background: #22c55e;
+      color: white;
+      border-color: #22c55e;
+    }
+
+    .flags-table {
+      width: 100%;
+    }
+
+    .flags-table td {
+      vertical-align: middle;
+    }
+
+    .flag-row-type {
+      font-weight: 600;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+    }
+
+    .flag-type-copyright { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+    .flag-type-gdpr { background: rgba(139, 92, 246, 0.1); color: #8b5cf6; }
+    .flag-type-illegal { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+    .flag-type-abuse { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+    .flag-type-spam { background: rgba(107, 114, 128, 0.1); color: #6b7280; }
+    .flag-type-other { background: rgba(107, 114, 128, 0.1); color: #6b7280; }
+
+    .flag-status-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .flag-status-pending { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+    .flag-status-reviewing { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+    .flag-status-resolved { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+    .flag-status-dismissed { background: rgba(107, 114, 128, 0.1); color: #6b7280; }
+
+    .flag-row {
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .flag-row:hover {
+      background: var(--surface-hover);
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      animation: fadeIn 0.3s ease;
+    }
+
+    .modal.show {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-content {
+      background: var(--bg);
+      padding: 2rem;
+      border-radius: 8px;
+      max-width: 700px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1rem;
+    }
+
+    .modal-header h2 {
+      margin: 0;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      color: var(--text-muted);
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+
+    .close-btn:hover {
+      background: var(--surface);
+    }
+
+    .flag-details {
+      display: grid;
+      gap: 1.5rem;
+    }
+
+    .detail-section {
+      padding: 1rem;
+      background: var(--surface);
+      border-radius: 6px;
+    }
+
+    .detail-label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    .detail-value {
+      color: var(--text);
+      word-break: break-word;
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+    }
+
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--text);
+      font-family: inherit;
+      font-size: inherit;
+    }
+
+    .form-group textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    .form-group select:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.1);
+    }
+
+    .resolution-history {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .resolution-item {
+      padding: 1rem;
+      background: var(--surface);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+    }
+
+    .resolution-action {
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+
+    .resolution-timestamp {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 1rem;
+      justify-content: flex-end;
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .alert {
+      padding: 1rem;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+    }
+
+    .alert.success {
+      background: rgba(34, 197, 94, 0.1);
+      color: #22c55e;
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+
+    .alert.error {
+      background: rgba(239, 68, 68, 0.1);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 3rem;
+      color: var(--text-muted);
+    }
+
+    @media (max-width: 768px) {
+      .flags-header {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .modal-content {
+        padding: 1.5rem;
+      }
+
+      .table-wrap {
+        font-size: 0.85rem;
+      }
+
+      .flags-table th,
+      .flags-table td {
+        padding: 0.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="navbar">
+      <a class="brand" href="/dashboard.html">🖼️ ImgHoster</a>
+      <span class="spacer"></span>
+      <span class="user-info" id="nav-user"></span>
+      <button class="btn-logout" id="btn-logout" type="button">Log out</button>
+    </nav>
+
+    <aside class="sidebar">
+      <nav>
+        <a href="upload.html"><span class="nav-icon">⬆️</span> Upload</a>
+        <a href="list.html"><span class="nav-icon">🗂️</span> My Images</a>
+        <a href="stats.html"><span class="nav-icon">📊</span> Statistics</a>
+        <a href="token.html"><span class="nav-icon">🔐</span> API Token</a>
+        <a href="dashboard.html" data-admin-only><span class="nav-icon">⚙️</span> Dashboard</a>
+        <a href="flags-admin.html" data-admin-only><span class="nav-icon">⚠️</span> Content Flags</a>
+      </nav>
+    </aside>
+
+    <main class="main-content">
+      <div class="flags-header">
+        <h1 class="page-title" style="margin: 0;">Content Flags</h1>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary btn-sm" id="btn-refresh">🔄 Refresh</button>
+        </div>
+      </div>
+
+      <div id="alert" class="alert" style="display: none;"></div>
+
+      <div class="status-badges" id="status-filters">
+        <button class="status-badge all active" data-status="">All Flags</button>
+        <button class="status-badge pending" data-status="pending">Pending <span id="count-pending">0</span></button>
+        <button class="status-badge reviewing" data-status="reviewing">Reviewing <span id="count-reviewing">0</span></button>
+        <button class="status-badge resolved" data-status="resolved">Resolved <span id="count-resolved">0</span></button>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table id="flags-table" class="flags-table">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Image</th>
+                <th>Reporter</th>
+                <th>Country</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="flags-tbody">
+              <tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-muted);">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="empty-state" class="empty-state" style="display: none;">
+        <p>✅ No flags to review</p>
+      </div>
+    </main>
+  </div>
+
+  <!-- Flag Details Modal -->
+  <div id="flag-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Flag Details</h2>
+        <button class="close-btn" id="close-modal">&times;</button>
+      </div>
+
+      <div class="flag-details" id="flag-details-container">
+        <!-- Populated dynamically -->
+      </div>
+
+      <div id="modal-alert" class="alert" style="display: none; margin-top: 1.5rem;"></div>
+
+      <div id="resolve-form" style="display: none; margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
+        <h3 style="margin-top: 0;">Resolve Flag</h3>
+        <div class="form-group">
+          <label for="action-select">Action <span style="color: #ef4444;">*</span></label>
+          <select id="action-select" required>
+            <option value="">– Select action –</option>
+            <option value="removed">Content Removed</option>
+            <option value="dismissed">Claim Dismissed</option>
+            <option value="contacted">Contacted Content Owner</option>
+            <option value="under-review">Under Review</option>
+            <option value="escalated">Escalated to Legal</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="action-notes">Admin Notes</label>
+          <textarea id="action-notes" placeholder="Document your decision and any relevant information…"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="evidence-url">Evidence URL (optional)</label>
+          <input type="url" id="evidence-url" placeholder="https://example.com/documentation" />
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-resolve">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btn-submit-resolve">Submit Resolution</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    const modal = document.getElementById('flag-modal');
+    const closeBtn = document.getElementById('close-modal');
+    const resolveForm = document.getElementById('resolve-form');
+    const btnCancelResolve = document.getElementById('btn-cancel-resolve');
+    const btnSubmitResolve = document.getElementById('btn-submit-resolve');
+    const actionSelect = document.getElementById('action-select');
+    const actionNotes = document.getElementById('action-notes');
+    const evidenceUrl = document.getElementById('evidence-url');
+    const modalAlert = document.getElementById('modal-alert');
+    const alert = document.getElementById('alert');
+    const statusFilters = document.getElementById('status-filters');
+    const flagsTable = document.getElementById('flags-tbody');
+    const btnRefresh = document.getElementById('btn-refresh');
+
+    let currentFlagId = null;
+    let currentStatus = '';
+
+    const flagTypeByName = {
+      copyright: 'Copyright',
+      gdpr: 'GDPR',
+      illegal: 'Illegal',
+      abuse: 'Abuse',
+      spam: 'Spam',
+      other: 'Other',
+    };
+
+    async function loadFlags(status = '') {
+      try {
+        const url = new URL('/api/flags', window.location.origin);
+        if (status) url.searchParams.set('status', status);
+
+        const response = await fetch(url, {
+          headers: {
+            'X-CSRF-Token': window.csrfToken,
+          },
+        });
+
+        if (!response.ok) throw new Error('Failed to load flags');
+
+        const data = await response.json();
+        renderFlags(data.flags);
+        updateCounts(data.counts);
+      } catch (err) {
+        console.error('Error loading flags:', err);
+        showAlert('Failed to load flags', 'error');
+      }
+    }
+
+    function renderFlags(flags) {
+      if (flags.length === 0) {
+        flagsTable.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-muted);">No flags found</td></tr>';
+        return;
+      }
+
+      flagsTable.innerHTML = flags.map(flag => `
+        <tr class="flag-row" onclick="openFlagDetails(${flag.id})">
+          <td>
+            <span class="flag-row-type flag-type-${flag.flag_type}">
+              ${flagTypeByName[flag.flag_type] || flag.flag_type}
+            </span>
+          </td>
+          <td>
+            <small><a href="image-view.html?s=${flag.slug}" target="_blank">${escapeHtml(flag.original_name)}</a></small>
+          </td>
+          <td>${escapeHtml(flag.reporter_name || '–')}</td>
+          <td>${escapeHtml(flag.reporter_country || '–')}</td>
+          <td>
+            <span class="flag-status-badge flag-status-${flag.status}">
+              ${flag.status}
+            </span>
+          </td>
+          <td><small>${new Date(flag.created_at).toLocaleDateString()}</small></td>
+          <td>
+            <button class="btn btn-sm btn-secondary" onclick="openFlagDetails(${flag.id}); event.stopPropagation();">View</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function updateCounts(counts) {
+      document.getElementById('count-pending').textContent = `(${counts.pending || 0})`;
+      document.getElementById('count-reviewing').textContent = `(${counts.reviewing || 0})`;
+      document.getElementById('count-resolved').textContent = `(${counts.resolved || 0})`;
+    }
+
+    async function openFlagDetails(flagId) {
+      currentFlagId = flagId;
+      modalAlert.style.display = 'none';
+      modalAlert.innerHTML = '';
+
+      try {
+        const response = await fetch(`/api/flags/${flagId}`, {
+          headers: {
+            'X-CSRF-Token': window.csrfToken,
+          },
+        });
+
+        if (!response.ok) throw new Error('Failed to load flag details');
+
+        const flag = await response.json();
+        renderFlagDetails(flag);
+        modal.classList.add('show');
+      } catch (err) {
+        console.error('Error loading flag:', err);
+        showAlert('Failed to load flag details', 'error');
+      }
+    }
+
+    function renderFlagDetails(flag) {
+      const container = document.getElementById('flag-details-container');
+      const isResolved = flag.status === 'resolved';
+
+      let resolutionsHtml = '';
+      if (flag.resolutions && flag.resolutions.length > 0) {
+        resolutionsHtml = `
+          <div class="detail-section">
+            <div class="detail-label">Resolution History</div>
+            <div class="resolution-history">
+              ${flag.resolutions.map(res => `
+                <div class="resolution-item">
+                  <div class="resolution-action">✓ ${res.action}</div>
+                  ${res.admin_username ? `<div><strong>Admin:</strong> ${escapeHtml(res.admin_username)}</div>` : ''}
+                  ${res.notes ? `<div><strong>Notes:</strong> ${escapeHtml(res.notes)}</div>` : ''}
+                  <div class="resolution-timestamp">${new Date(res.resolved_at).toLocaleString()}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      container.innerHTML = `
+        <div class="detail-section">
+          <div class="detail-label">Flag Type</div>
+          <div class="detail-value">${flagTypeByName[flag.flag_type] || flag.flag_type}</div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-label">Status</div>
+          <div class="detail-value">
+            <span class="flag-status-badge flag-status-${flag.status}">${flag.status}</span>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-label">Image</div>
+          <div class="detail-value">
+            <a href="image-view.html?s=${flag.slug}" target="_blank">${escapeHtml(flag.original_name)}</a>
+            <br><small>${escapeHtml(flag.slug)}</small>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-label">Reason / Description</div>
+          <div class="detail-value">${escapeHtml(flag.reason)}</div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-label">Reporter Information</div>
+          <div class="detail-value">
+            <div><strong>Name:</strong> ${escapeHtml(flag.reporter_name || 'Anonymous')}</div>
+            <div><strong>Email:</strong> ${escapeHtml(flag.reporter_email || 'Not provided')}</div>
+            <div><strong>Country:</strong> ${escapeHtml(flag.reporter_country || 'Not provided')}</div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-label">Submitted</div>
+          <div class="detail-value">${new Date(flag.created_at).toLocaleString()}</div>
+        </div>
+
+        ${resolutionsHtml}
+      `;
+
+      if (!isResolved) {
+        resolveForm.style.display = 'block';
+        actionSelect.value = '';
+        actionNotes.value = '';
+        evidenceUrl.value = '';
+      } else {
+        resolveForm.style.display = 'none';
+      }
+    }
+
+    closeBtn.addEventListener('click', () => {
+      modal.classList.remove('show');
+      currentFlagId = null;
+    });
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.classList.remove('show');
+        currentFlagId = null;
+      }
+    });
+
+    btnCancelResolve.addEventListener('click', () => {
+      modal.classList.remove('show');
+      currentFlagId = null;
+    });
+
+    btnSubmitResolve.addEventListener('click', async () => {
+      const action = actionSelect.value;
+      const notes = actionNotes.value.trim();
+      const evUrl = evidenceUrl.value.trim();
+
+      if (!action) {
+        showModalAlert('Please select an action', 'error');
+        return;
+      }
+
+      btnSubmitResolve.disabled = true;
+
+      try {
+        const response = await fetch(`/api/flags/${currentFlagId}/resolve`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': window.csrfToken,
+          },
+          body: JSON.stringify({
+            action,
+            notes: notes || null,
+            evidenceUrl: evUrl || null,
+          }),
+        });
+
+        if (!response.ok) throw new Error('Failed to resolve flag');
+
+        showModalAlert('Flag resolved successfully', 'success');
+        setTimeout(() => {
+          modal.classList.remove('show');
+          currentFlagId = null;
+          loadFlags(currentStatus);
+        }, 1500);
+      } catch (err) {
+        console.error('Error resolving flag:', err);
+        showModalAlert(err.message || 'Failed to resolve flag', 'error');
+      } finally {
+        btnSubmitResolve.disabled = false;
+      }
+    });
+
+    statusFilters.addEventListener('click', (e) => {
+      if (e.target.classList.contains('status-badge')) {
+        document.querySelectorAll('.status-badge').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        currentStatus = e.target.dataset.status;
+        loadFlags(currentStatus);
+      }
+    });
+
+    btnRefresh.addEventListener('click', () => {
+      loadFlags(currentStatus);
+    });
+
+    function showAlert(msg, type) {
+      alert.className = `alert ${type}`;
+      alert.textContent = msg;
+      alert.style.display = 'block';
+    }
+
+    function showModalAlert(msg, type) {
+      modalAlert.className = `alert ${type}`;
+      modalAlert.textContent = msg;
+      modalAlert.style.display = 'block';
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Load flags on page load
+    window.addEventListener('load', () => {
+      loadFlags(currentStatus);
+    });
+  </script>
+</body>
+</html>

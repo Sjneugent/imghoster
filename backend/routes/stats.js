@@ -1,10 +1,8 @@
-'use strict';
-
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const { requireAuth } = require('../middleware/requireAuth');
-const { getImageStats, getViewsOverTime, getImageById } = require('../db');
-const logger = require('../logger');
+import { requireAuth } from '../middleware/requireAuth.js';
+import { getImageStats, getViewsOverTime, getImageById } from '../db/index.js';
+import logger from '../logger.js';
 
 // GET /api/stats              – stats for current user's images
 // GET /api/stats?all=1        – all images (admin)
@@ -55,4 +53,4 @@ router.get('/timeline', requireAuth, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

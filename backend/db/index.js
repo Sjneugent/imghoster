@@ -1,4 +1,5 @@
-'use strict';
+import SqliteAdapter from './adapters/sqlite.js';
+import PostgresAdapter from './adapters/postgresql.js';
 
 /**
  * Database abstraction layer.
@@ -32,14 +33,12 @@ async function initDB(config) {
 
   switch (dbType) {
     case 'sqlite': {
-      const SqliteAdapter = require('./adapters/sqlite');
       adapter = new SqliteAdapter();
       break;
     }
     case 'postgresql':
     case 'postgres':
     case 'pg': {
-      const PostgresAdapter = require('./adapters/postgresql');
       adapter = new PostgresAdapter();
       break;
     }
@@ -152,6 +151,14 @@ async function getImagesByIds(ids) {
   return getAdapter().getImagesByIds(ids);
 }
 
+async function checkDuplicateHash(fileHash) {
+  return getAdapter().checkDuplicateHash(fileHash);
+}
+
+async function getImagesByFileHash(fileHash) {
+  return getAdapter().getImagesByFileHash(fileHash);
+}
+
 async function recordView(imageId, ipAddress, referrer) {
   return getAdapter().recordView(imageId, ipAddress, referrer);
 }
@@ -172,7 +179,41 @@ async function importData(data) {
   return getAdapter().importData(data);
 }
 
-module.exports = {
+// ── Content Flagging proxy functions ─────────────────────────────────────────
+
+async function createContentFlag(data) {
+  return getAdapter().createContentFlag(data);
+}
+
+async function getContentFlag(flagId) {
+  return getAdapter().getContentFlag(flagId);
+}
+
+async function listContentFlags(options) {
+  return getAdapter().listContentFlags(options);
+}
+
+async function getFlagCountByStatus() {
+  return getAdapter().getFlagCountByStatus();
+}
+
+async function updateFlagStatus(flagId, newStatus) {
+  return getAdapter().updateFlagStatus(flagId, newStatus);
+}
+
+async function createFlagResolution(data) {
+  return getAdapter().createFlagResolution(data);
+}
+
+async function getFlagResolutions(flagId) {
+  return getAdapter().getFlagResolutions(flagId);
+}
+
+async function getFlagWithResolutions(flagId) {
+  return getAdapter().getFlagWithResolutions(flagId);
+}
+
+export {
   initDB,
   getDB,
   createUser,
@@ -197,9 +238,19 @@ module.exports = {
   slugExists,
   searchImages,
   getImagesByIds,
+  checkDuplicateHash,
+  getImagesByFileHash,
   recordView,
   getImageStats,
   getViewsOverTime,
   exportData,
   importData,
+  createContentFlag,
+  getContentFlag,
+  listContentFlags,
+  getFlagCountByStatus,
+  updateFlagStatus,
+  createFlagResolution,
+  getFlagResolutions,
+  getFlagWithResolutions,
 };

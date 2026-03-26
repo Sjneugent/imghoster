@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-'use strict';
+
+import dotenv from 'dotenv';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { initDB, exportData, getDB } from '../db/index.js';
 
 /**
  * Database backup script.
@@ -16,11 +21,10 @@
  *   node scripts/db-backup.js ./backups/export.json    # custom path (PostgreSQL)
  */
 
-require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const path = require('path');
-const fs = require('fs');
-const { initDB, exportData } = require('../db');
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'imghoster.db');
 const DB_TYPE = (process.env.DB_TYPE || 'sqlite').toLowerCase();
@@ -40,7 +44,7 @@ const DB_TYPE = (process.env.DB_TYPE || 'sqlite').toLowerCase();
       if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
       // Use better-sqlite3's backup API for a consistent online backup
-      const adapter = require('../db').getDB();
+      const adapter = getDB();
       const rawDb = adapter.getRawDB();
       rawDb.backup(outPath);
 

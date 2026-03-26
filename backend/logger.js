@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Lightweight logger for ImgHoster.
  *
@@ -38,4 +36,4 @@ const logger = {
   },
 };
 
-module.exports = logger;
+export default logger;

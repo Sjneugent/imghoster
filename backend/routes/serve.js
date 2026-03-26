@@ -1,11 +1,13 @@
-'use strict';
-
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const path = require('path');
-const fs = require('fs');
-const { getImageBySlug, recordView } = require('../db');
-const logger = require('../logger');
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { getImageBySlug, recordView } from '../db/index.js';
+import logger from '../logger.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', '..', 'uploads');
 
@@ -65,4 +67,4 @@ router.get('/:slug', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

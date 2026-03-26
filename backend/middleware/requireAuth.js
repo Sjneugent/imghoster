@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Check whether the localhost auth bypass is enabled.
  * Set LOCALHOST_BYPASS=false to disable it (any other value keeps it on).
@@ -38,4 +36,4 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-module.exports = { requireAuth, requireAdmin, isLocalhost };
+export { requireAuth, requireAdmin, isLocalhost };

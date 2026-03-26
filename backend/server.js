@@ -1,20 +1,29 @@
-'use strict';
+import dotenv from 'dotenv';
+import express from 'express';
+import session from 'express-session';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import path from 'node:path';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import Database from 'better-sqlite3';
+import SqliteSessionStore from 'express-session-better-sqlite3';
+import { initDB } from './db/index.js';
+import { isLocalhost } from './middleware/requireAuth.js';
+import { apiTokenMiddleware, requireApiToken } from './middleware/apiToken.js';
+import logger from './logger.js';
+import authRoutes from './routes/auth.js';
+import imagesRoutes from './routes/images.js';
+import adminRoutes from './routes/admin.js';
+import statsRoutes from './routes/stats.js';
+import serveRoutes from './routes/serve.js';
+import flagsRoutes from './routes/flags.js';
 
-require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const express = require('express');
-const session = require('express-session');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-const path = require('path');
-const fs = require('fs');
-const crypto = require('crypto');
-const Database = require('better-sqlite3');
-const SqliteSessionStore = require('express-session-better-sqlite3');
-const { initDB } = require('./db');
-const { isLocalhost } = require('./middleware/requireAuth');
-const { apiTokenMiddleware, requireApiToken } = require('./middleware/apiToken');
-const logger = require('./logger');
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -143,11 +152,12 @@ app.use(express.static(PUBLIC_DIR));
 app.use(apiTokenMiddleware);
 
 // ── Routes ────────────────────────────────────────────────────────────────────
-app.use('/api/auth', loginLimiter, require('./routes/auth'));
-app.use('/api/images', generalLimiter, requireApiToken, csrfProtect, require('./routes/images'));
-app.use('/api/admin', generalLimiter, requireApiToken, csrfProtect, require('./routes/admin'));
-app.use('/api/stats', generalLimiter, requireApiToken, require('./routes/stats'));
-app.use('/i', generalLimiter, require('./routes/serve')); // public image serving
+app.use('/api/auth', loginLimiter, authRoutes);
+app.use('/api/flags', generalLimiter, csrfProtect, flagsRoutes); // Public for POST (report), admin for GET (review)
+app.use('/api/images', generalLimiter, requireApiToken, csrfProtect, imagesRoutes);
+app.use('/api/admin', generalLimiter, requireApiToken, csrfProtect, adminRoutes);
+app.use('/api/stats', generalLimiter, requireApiToken, statsRoutes);
+app.use('/i', generalLimiter, serveRoutes); // public image serving
 
 // Root redirect
 app.get('/', (_req, res) => res.redirect('/login.html'));
@@ -195,4 +205,4 @@ const serverPromise = start().catch((err) => {
   process.exit(1);
 });
 
-module.exports = serverPromise;
+export default serverPromise;

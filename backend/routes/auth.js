@@ -1,9 +1,8 @@
-'use strict';
-
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const crypto = require('crypto');
-const {
+import crypto from 'node:crypto';
+
+import {
   getUserByUsername,
   getUserByEmail,
   verifyPassword,
@@ -11,10 +10,10 @@ const {
   createApiToken,
   listApiTokensByUser,
   revokeApiToken,
-} = require('../db');
-const { isLocalhost, requireAuth } = require('../middleware/requireAuth');
-const { hashToken } = require('../middleware/apiToken');
-const logger = require('../logger');
+} from '../db/index.js';
+import { isLocalhost, requireAuth } from '../middleware/requireAuth.js';
+import { hashToken } from '../middleware/apiToken.js';
+import logger from '../logger.js';
 
 function buildCaptchaText(length = 6) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -334,4 +333,4 @@ router.get('/me', (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

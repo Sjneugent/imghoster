@@ -1,10 +1,8 @@
-'use strict';
-
-const Database = require('better-sqlite3');
-const bcrypt = require('bcrypt');
-const path = require('path');
-const fs = require('fs');
-const BaseAdapter = require('../BaseAdapter');
+import Database from 'better-sqlite3';
+import bcrypt from 'bcrypt';
+import path from 'node:path';
+import fs from 'node:fs';
+import BaseAdapter from '../BaseAdapter.js';
 
 const SALT_ROUNDS = 12;
 
@@ -41,6 +39,7 @@ class SqliteAdapter extends BaseAdapter {
         slug TEXT UNIQUE NOT NULL,
         mime_type TEXT NOT NULL,
         size INTEGER NOT NULL,
+        file_hash TEXT,
         comment TEXT,
         tags TEXT,
         user_id INTEGER NOT NULL,
@@ -69,11 +68,40 @@ class SqliteAdapter extends BaseAdapter {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS content_flags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        image_id INTEGER NOT NULL,
+        flag_type TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        reporter_name TEXT,
+        reporter_email TEXT,
+        reporter_country TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS flag_resolutions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        flag_id INTEGER NOT NULL,
+        admin_id INTEGER,
+        action TEXT NOT NULL,
+        notes TEXT,
+        evidence_url TEXT,
+        resolved_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (flag_id) REFERENCES content_flags(id) ON DELETE CASCADE,
+        FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE SET NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_images_slug ON images(slug);
       CREATE INDEX IF NOT EXISTS idx_images_user ON images(user_id);
       CREATE INDEX IF NOT EXISTS idx_views_image ON image_views(image_id);
       CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
       CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash);
+      CREATE INDEX IF NOT EXISTS idx_flags_image ON content_flags(image_id);
+      CREATE INDEX IF NOT EXISTS idx_flags_status ON content_flags(status);
+      CREATE INDEX IF NOT EXISTS idx_flags_created ON content_flags(created_at);
+      CREATE INDEX IF NOT EXISTS idx_resolutions_flag ON flag_resolutions(flag_id);
     `);
 
     // Backward-compatible migration for existing DB files.
@@ -95,12 +123,19 @@ class SqliteAdapter extends BaseAdapter {
     const imageCols = this.db.prepare("PRAGMA table_info(images)").all();
     const hasComment = imageCols.some(c => c.name === 'comment');
     const hasTags = imageCols.some(c => c.name === 'tags');
+    const hasFileHash = imageCols.some(c => c.name === 'file_hash');
     if (!hasComment) {
       this.db.exec('ALTER TABLE images ADD COLUMN comment TEXT');
     }
     if (!hasTags) {
       this.db.exec('ALTER TABLE images ADD COLUMN tags TEXT');
     }
+    if (!hasFileHash) {
+      this.db.exec('ALTER TABLE images ADD COLUMN file_hash TEXT');
+    }
+
+    // Create index for file hash lookups
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_images_file_hash ON images(file_hash)');
 
     return this;
   }
@@ -219,12 +254,12 @@ class SqliteAdapter extends BaseAdapter {
 
   // ── Image helpers ─────────────────────────────────────────────────────────
 
-  async createImage({ filename, originalName, slug, mimeType, size, userId, comment = null, tags = null }) {
+  async createImage({ filename, originalName, slug, mimeType, size, userId, comment = null, tags = null, fileHash = null }) {
     const stmt = this.db.prepare(
-      `INSERT INTO images (filename, original_name, slug, mime_type, size, comment, tags, user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO images (filename, original_name, slug, mime_type, size, file_hash, comment, tags, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
-    const result = stmt.run(filename, originalName, slug, mimeType, size, comment, tags, userId);
+    const result = stmt.run(filename, originalName, slug, mimeType, size, fileHash, comment, tags, userId);
     return Number(result.lastInsertRowid);
   }
 
@@ -310,6 +345,28 @@ class SqliteAdapter extends BaseAdapter {
     return this.db
       .prepare(`SELECT * FROM images WHERE id IN (${placeholders})`)
       .all(...ids);
+  }
+
+  async checkDuplicateHash(fileHash) {
+    if (!fileHash) return null;
+    return this.db
+      .prepare(
+        `SELECT id, slug, original_name, user_id, created_at
+         FROM images WHERE file_hash = ?
+         LIMIT 1`
+      )
+      .get(fileHash);
+  }
+
+  async getImagesByFileHash(fileHash) {
+    if (!fileHash) return [];
+    return this.db
+      .prepare(
+        `SELECT id, slug, original_name, user_id, created_at
+         FROM images WHERE file_hash = ?
+         ORDER BY created_at DESC`
+      )
+      .all(fileHash);
   }
 
   // ── View / stats helpers ──────────────────────────────────────────────────
@@ -471,6 +528,100 @@ class SqliteAdapter extends BaseAdapter {
     });
     trx();
   }
+
+  // ── Content Flagging helpers ──────────────────────────────────────────────
+
+  async createContentFlag({ imageId, flagType, reason, reporterName = null, reporterEmail = null, reporterCountry = null }) {
+    const stmt = this.db.prepare(
+      `INSERT INTO content_flags (image_id, flag_type, reason, reporter_name, reporter_email, reporter_country)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    );
+    const result = stmt.run(imageId, flagType, reason, reporterName, reporterEmail, reporterCountry);
+    return Number(result.lastInsertRowid);
+  }
+
+  async getContentFlag(flagId) {
+    return this.db
+      .prepare(
+        `SELECT f.*, i.slug, i.original_name, u.username
+         FROM content_flags f
+         JOIN images i ON i.id = f.image_id
+         JOIN users u ON u.id = i.user_id
+         WHERE f.id = ?`
+      )
+      .get(flagId);
+  }
+
+  async listContentFlags({ status = null, imageId = null, limit = 50, offset = 0 } = {}) {
+    let query = 
+      `SELECT f.id, f.image_id, f.flag_type, f.reason, f.reporter_name, f.reporter_country,
+              f.status, f.created_at, i.slug, i.original_name, u.username,
+              COUNT(res.id) as resolution_count
+       FROM content_flags f
+       JOIN images i ON i.id = f.image_id
+       JOIN users u ON u.id = i.user_id
+       LEFT JOIN flag_resolutions res ON res.flag_id = f.id
+       WHERE 1=1`;
+    
+    const params = [];
+    if (status) {
+      query += ` AND f.status = ?`;
+      params.push(status);
+    }
+    if (imageId) {
+      query += ` AND f.image_id = ?`;
+      params.push(imageId);
+    }
+    
+    query += ` GROUP BY f.id ORDER BY f.created_at DESC LIMIT ? OFFSET ?`;
+    params.push(limit, offset);
+    
+    return this.db.prepare(query).all(...params);
+  }
+
+  async getFlagCountByStatus() {
+    return this.db
+      .prepare(
+        `SELECT status, COUNT(*) as count
+         FROM content_flags
+         GROUP BY status`
+      )
+      .all();
+  }
+
+  async updateFlagStatus(flagId, newStatus) {
+    return this.db
+      .prepare(`UPDATE content_flags SET status = ? WHERE id = ?`)
+      .run(newStatus, flagId);
+  }
+
+  async createFlagResolution({ flagId, adminId = null, action, notes = null, evidenceUrl = null }) {
+    const stmt = this.db.prepare(
+      `INSERT INTO flag_resolutions (flag_id, admin_id, action, notes, evidence_url)
+       VALUES (?, ?, ?, ?, ?)`
+    );
+    const result = stmt.run(flagId, adminId, action, notes, evidenceUrl);
+    return Number(result.lastInsertRowid);
+  }
+
+  async getFlagResolutions(flagId) {
+    return this.db
+      .prepare(
+        `SELECT r.*, u.username as admin_username
+         FROM flag_resolutions r
+         LEFT JOIN users u ON u.id = r.admin_id
+         WHERE r.flag_id = ?
+         ORDER BY r.resolved_at DESC`
+      )
+      .all(flagId);
+  }
+
+  async getFlagWithResolutions(flagId) {
+    const flag = await this.getContentFlag(flagId);
+    if (!flag) return null;
+    const resolutions = await this.getFlagResolutions(flagId);
+    return { ...flag, resolutions };
+  }
 }
 
-module.exports = SqliteAdapter;
+export default SqliteAdapter;

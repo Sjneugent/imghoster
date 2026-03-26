@@ -1,10 +1,8 @@
-'use strict';
-
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const { requireAdmin } = require('../middleware/requireAuth');
-const { listUsers, createUser, deleteUser, updateUserPassword, getUserById } = require('../db');
-const logger = require('../logger');
+import { requireAdmin } from '../middleware/requireAuth.js';
+import { listUsers, createUser, deleteUser, updateUserPassword, getUserById } from '../db/index.js';
+import logger from '../logger.js';
 
 // All admin routes require admin privileges
 router.use(requireAdmin);
@@ -90,4 +88,4 @@ router.delete('/users/:id', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

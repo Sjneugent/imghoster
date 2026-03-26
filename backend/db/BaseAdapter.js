@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * BaseAdapter – abstract base class defining the database interface contract.
  *
@@ -172,4 +170,4 @@ class BaseAdapter {
   }
 }
 
-module.exports = BaseAdapter;
+export default BaseAdapter;

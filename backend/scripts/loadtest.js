@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Basic load test for ImgHoster API.
  *
@@ -14,7 +12,7 @@
  *   node scripts/loadtest.js --baseUrl http://127.0.0.1:3000 --durationSec 120 --concurrency 40 --username admin --password secret
  */
 
-const { performance } = require('node:perf_hooks');
+import { performance } from 'node:perf_hooks';
 
 function parseArgs(argv) {
   const out = {};

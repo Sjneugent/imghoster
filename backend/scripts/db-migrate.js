@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-'use strict';
+
+import dotenv from 'dotenv';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { initDB, listUsers, getImageStats } from '../db/index.js';
 
 /**
  * Database migration runner.
@@ -21,10 +25,10 @@
  *   DB_TYPE=postgresql DATABASE_URL=postgres://localhost/imghoster node scripts/db-migrate.js --status
  */
 
-require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const path = require('path');
-const { initDB, getDB, listUsers, getImageStats } = require('../db');
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'imghoster.db');
 const DB_TYPE = (process.env.DB_TYPE || 'sqlite').toLowerCase();

@@ -1,14 +1,14 @@
-'use strict';
-
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-const sharp = require('sharp');
-const { v4: uuidv4 } = require('uuid');
-const yazl = require('yazl');
-const {
+import multer from 'multer';
+import path from 'node:path';
+import fs from 'node:fs';
+import sharp from 'sharp';
+import { v4 as uuidv4 } from 'uuid';
+import yazl from 'yazl';
+import { fileURLToPath } from 'node:url';
+
+import {
   createImage,
   getImageById,
   listImagesByUser,
@@ -17,10 +17,14 @@ const {
   slugExists,
   searchImages,
   getImagesByIds,
+  checkDuplicateHash,
   listUsers,
-} = require('../db');
-const { requireAuth, isLocalhost } = require('../middleware/requireAuth');
-const logger = require('../logger');
+} from '../db/index.js';
+import { requireAuth, isLocalhost } from '../middleware/requireAuth.js';
+import logger from '../logger.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', '..', 'uploads');
 const ALLOWED_MIME = new Set([
@@ -127,6 +131,43 @@ async function getLocalhostFallbackUserId() {
   return admin ? admin.id : (users.length > 0 ? users[0].id : null);
 }
 
+// ── Duplicate Detection ────────────────────────────────────────────────────────
+// POST /api/images/check-hash
+// Check if a file hash already exists (for deduplication)
+router.post('/check-hash', async (req, res) => {
+  try {
+    const { fileHash } = req.body;
+    
+    if (!fileHash) {
+      return res.status(400).json({ error: 'Missing fileHash' });
+    }
+
+    const duplicate = await checkDuplicateHash(fileHash);
+    
+    if (duplicate) {
+      return res.status(409).json({
+        isDuplicate: true,
+        message: 'Image already uploaded. Please upload a unique image.',
+        existing: {
+          id: duplicate.id,
+          slug: duplicate.slug,
+          originalName: duplicate.original_name,
+          uploadedAt: duplicate.created_at,
+          uploadedBy: duplicate.user_id,
+        },
+      });
+    }
+
+    res.json({
+      isDuplicate: false,
+      message: 'File is unique and can be uploaded.',
+    });
+  } catch (err) {
+    logger.error('Error checking file hash:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── Upload ────────────────────────────────────────────────────────────────────
 // POST /api/images/upload
 router.post('/upload', requireAuth, upload.array('image', 5), async (req, res) => {
@@ -161,6 +202,7 @@ router.post('/upload', requireAuth, upload.array('image', 5), async (req, res) =
     const compressRequested = parseBooleanFlag(req.body.compress);
     const comment = sanitizeComment(req.body.comment);
     const tags = sanitizeTags(req.body.tags);
+    const fileHash = req.body.fileHash || null;
 
     const userId = req.session.userId || (isLocalhost(req) ? await getLocalhostFallbackUserId() : null);
     if (!userId) {
@@ -207,6 +249,7 @@ router.post('/upload', requireAuth, upload.array('image', 5), async (req, res) =
         size: compression.finalSize,
         comment,
         tags,
+        fileHash: files.length === 1 ? fileHash : null,
         userId,
       });
 
@@ -417,4 +460,4 @@ router.use((err, _req, res, _next) => {
   res.status(400).json({ error: err.message || 'Upload error.' });
 });
 
-module.exports = router;
+export default router;

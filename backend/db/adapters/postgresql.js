@@ -1,7 +1,5 @@
-'use strict';
-
-const bcrypt = require('bcrypt');
-const BaseAdapter = require('../BaseAdapter');
+import bcrypt from 'bcrypt';
+import BaseAdapter from '../BaseAdapter.js';
 
 const SALT_ROUNDS = 12;
 
@@ -27,7 +25,7 @@ class PostgresAdapter extends BaseAdapter {
   async init(config) {
     let Pool;
     try {
-      ({ Pool } = require('pg'));
+      ({ Pool } = await import('pg'));
     } catch (_err) {
       throw new Error(
         'PostgreSQL adapter requires the "pg" package. Install it with:\n' +
@@ -72,6 +70,7 @@ class PostgresAdapter extends BaseAdapter {
         slug TEXT UNIQUE NOT NULL,
         mime_type TEXT NOT NULL,
         size INTEGER NOT NULL,
+        file_hash TEXT,
         comment TEXT,
         tags TEXT,
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -97,22 +96,50 @@ class PostgresAdapter extends BaseAdapter {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
+      CREATE TABLE IF NOT EXISTS content_flags (
+        id SERIAL PRIMARY KEY,
+        image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+        flag_type TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        reporter_name TEXT,
+        reporter_email TEXT,
+        reporter_country TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS flag_resolutions (
+        id SERIAL PRIMARY KEY,
+        flag_id INTEGER NOT NULL REFERENCES content_flags(id) ON DELETE CASCADE,
+        admin_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        action TEXT NOT NULL,
+        notes TEXT,
+        evidence_url TEXT,
+        resolved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
       CREATE INDEX IF NOT EXISTS idx_images_slug ON images(slug);
       CREATE INDEX IF NOT EXISTS idx_images_user ON images(user_id);
       CREATE INDEX IF NOT EXISTS idx_views_image ON image_views(image_id);
       CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
       CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash);
+      CREATE INDEX IF NOT EXISTS idx_flags_image ON content_flags(image_id);
+      CREATE INDEX IF NOT EXISTS idx_flags_status ON content_flags(status);
+      CREATE INDEX IF NOT EXISTS idx_flags_created ON content_flags(created_at);
+      CREATE INDEX IF NOT EXISTS idx_resolutions_flag ON flag_resolutions(flag_id);
     `);
 
     await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT');
     await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS real_name TEXT');
     await client.query('ALTER TABLE images ADD COLUMN IF NOT EXISTS comment TEXT');
     await client.query('ALTER TABLE images ADD COLUMN IF NOT EXISTS tags TEXT');
+    await client.query('ALTER TABLE images ADD COLUMN IF NOT EXISTS file_hash TEXT');
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique
       ON users (LOWER(email))
       WHERE email IS NOT NULL AND email <> ''
     `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_images_file_hash ON images(file_hash)');
   }
 
   async close() {
@@ -231,11 +258,11 @@ class PostgresAdapter extends BaseAdapter {
 
   // ── Image helpers ─────────────────────────────────────────────────────────
 
-  async createImage({ filename, originalName, slug, mimeType, size, userId, comment = null, tags = null }) {
+  async createImage({ filename, originalName, slug, mimeType, size, userId, comment = null, tags = null, fileHash = null }) {
     const row = await this._queryOne(
-      `INSERT INTO images (filename, original_name, slug, mime_type, size, comment, tags, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-      [filename, originalName, slug, mimeType, size, comment, tags, userId]
+      `INSERT INTO images (filename, original_name, slug, mime_type, size, file_hash, comment, tags, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      [filename, originalName, slug, mimeType, size, fileHash, comment, tags, userId]
     );
     return row.id;
   }
@@ -313,6 +340,26 @@ class PostgresAdapter extends BaseAdapter {
     return this._queryAll(
       `SELECT * FROM images WHERE id IN (${placeholders})`,
       ids
+    );
+  }
+
+  async checkDuplicateHash(fileHash) {
+    if (!fileHash) return null;
+    return this._queryOne(
+      `SELECT id, slug, original_name, user_id, created_at
+       FROM images WHERE file_hash = $1
+       LIMIT 1`,
+      [fileHash]
+    );
+  }
+
+  async getImagesByFileHash(fileHash) {
+    if (!fileHash) return [];
+    return this._queryAll(
+      `SELECT id, slug, original_name, user_id, created_at
+       FROM images WHERE file_hash = $1
+       ORDER BY created_at DESC`,
+      [fileHash]
     );
   }
 
@@ -489,6 +536,101 @@ class PostgresAdapter extends BaseAdapter {
       client.release();
     }
   }
+
+  // ── Content Flagging helpers ──────────────────────────────────────────────
+
+  async createContentFlag({ imageId, flagType, reason, reporterName = null, reporterEmail = null, reporterCountry = null }) {
+    const result = await this._queryOne(
+      `INSERT INTO content_flags (image_id, flag_type, reason, reporter_name, reporter_email, reporter_country)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id`,
+      [imageId, flagType, reason, reporterName, reporterEmail, reporterCountry]
+    );
+    return result.id;
+  }
+
+  async getContentFlag(flagId) {
+    return this._queryOne(
+      `SELECT f.*, i.slug, i.original_name, u.username
+       FROM content_flags f
+       JOIN images i ON i.id = f.image_id
+       JOIN users u ON u.id = i.user_id
+       WHERE f.id = $1`,
+      [flagId]
+    );
+  }
+
+  async listContentFlags({ status = null, imageId = null, limit = 50, offset = 0 } = {}) {
+    let query = 
+      `SELECT f.id, f.image_id, f.flag_type, f.reason, f.reporter_name, f.reporter_country,
+              f.status, f.created_at, i.slug, i.original_name, u.username,
+              COUNT(res.id)::int as resolution_count
+       FROM content_flags f
+       JOIN images i ON i.id = f.image_id
+       JOIN users u ON u.id = i.user_id
+       LEFT JOIN flag_resolutions res ON res.flag_id = f.id
+       WHERE 1=1`;
+    
+    const params = [];
+    let paramIdx = 1;
+    if (status) {
+      query += ` AND f.status = $${paramIdx++}`;
+      params.push(status);
+    }
+    if (imageId) {
+      query += ` AND f.image_id = $${paramIdx++}`;
+      params.push(imageId);
+    }
+    
+    query += ` GROUP BY f.id ORDER BY f.created_at DESC LIMIT $${paramIdx++} OFFSET $${paramIdx++}`;
+    params.push(limit, offset);
+    
+    return this._queryAll(query, params);
+  }
+
+  async getFlagCountByStatus() {
+    return this._queryAll(
+      `SELECT status, COUNT(*)::int as count
+       FROM content_flags
+       GROUP BY status`,
+      []
+    );
+  }
+
+  async updateFlagStatus(flagId, newStatus) {
+    return this._queryOne(
+      `UPDATE content_flags SET status = $1 WHERE id = $2 RETURNING id`,
+      [newStatus, flagId]
+    );
+  }
+
+  async createFlagResolution({ flagId, adminId = null, action, notes = null, evidenceUrl = null }) {
+    const result = await this._queryOne(
+      `INSERT INTO flag_resolutions (flag_id, admin_id, action, notes, evidence_url)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id`,
+      [flagId, adminId, action, notes, evidenceUrl]
+    );
+    return result.id;
+  }
+
+  async getFlagResolutions(flagId) {
+    return this._queryAll(
+      `SELECT r.*, u.username as admin_username
+       FROM flag_resolutions r
+       LEFT JOIN users u ON u.id = r.admin_id
+       WHERE r.flag_id = $1
+       ORDER BY r.resolved_at DESC`,
+      [flagId]
+    );
+  }
+
+  async getFlagWithResolutions(flagId) {
+    const flag = await this.getContentFlag(flagId);
+    if (!flag) return null;
+    const resolutions = await this.getFlagResolutions(flagId);
+    return { ...flag, resolutions };
+  }
 }
 
-module.exports = PostgresAdapter;
+export default PostgresAdapter;

@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Image – ImgHoster</title>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    .image-viewer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+      gap: 2rem;
+    }
+
+    .image-container {
+      max-width: 90vw;
+      max-height: 80vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--surface);
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .image-container img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .image-info {
+      text-align: center;
+      max-width: 600px;
+    }
+
+    .image-info h1 {
+      margin: 0 0 0.5rem;
+      word-break: break-all;
+    }
+
+    .image-metadata {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+      font-size: 0.85rem;
+    }
+
+    .metadata-item {
+      padding: 0.75rem;
+      background: var(--surface);
+      border-radius: 6px;
+    }
+
+    .metadata-label {
+      color: var(--text-muted);
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+
+    .metadata-value {
+      color: var(--text);
+    }
+
+    .actions {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      animation: fadeIn 0.3s ease;
+    }
+
+    .modal.show {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-content {
+      background: var(--bg);
+      padding: 2rem;
+      border-radius: 8px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+      animation: slideUp 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(50px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1rem;
+    }
+
+    .modal-header h2 {
+      margin: 0;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      color: var(--text-muted);
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+
+    .close-btn:hover {
+      background: var(--surface);
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--text);
+      font-family: inherit;
+      font-size: inherit;
+    }
+
+    .form-group textarea {
+      resize: vertical;
+      min-height: 100px;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus,
+    .form-group select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.1);
+    }
+
+    .help-text {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 1rem;
+      justify-content: flex-end;
+    }
+
+    .alert {
+      padding: 1rem;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+    }
+
+    .alert.success {
+      background: rgba(34, 197, 94, 0.1);
+      color: #22c55e;
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+
+    .alert.error {
+      background: rgba(239, 68, 68, 0.1);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .alert.info {
+      background: rgba(59, 130, 246, 0.1);
+      color: #3b82f6;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    .loading {
+      display: none;
+    }
+
+    .flag-reason {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+      padding: 0.5rem;
+      background: var(--surface-hover);
+      border-radius: 4px;
+      border-left: 3px solid var(--accent);
+    }
+
+    @media (max-width: 600px) {
+      .modal-content {
+        padding: 1.5rem;
+      }
+
+      .image-metadata {
+        grid-template-columns: 1fr;
+      }
+
+      .actions {
+        gap: 0.5rem;
+      }
+
+      .btn {
+        font-size: 0.875rem;
+        padding: 0.5rem 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="image-viewer">
+    <div class="image-container">
+      <img id="image-display" alt="Image" />
+    </div>
+
+    <div class="image-info">
+      <h1 id="image-title">Loading image…</h1>
+      <div class="image-metadata" id="image-metadata">
+        <div class="metadata-item">
+          <div class="metadata-label">Views</div>
+          <div class="metadata-value" id="meta-views">–</div>
+        </div>
+        <div class="metadata-item">
+          <div class="metadata-label">Size</div>
+          <div class="metadata-value" id="meta-size">–</div>
+        </div>
+        <div class="metadata-item">
+          <div class="metadata-label">Type</div>
+          <div class="metadata-value" id="meta-type">–</div>
+        </div>
+        <div class="metadata-item">
+          <div class="metadata-label">Uploaded</div>
+          <div class="metadata-value" id="meta-date">–</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <a id="view-link" class="btn btn-primary" target="_blank">🔗 Open Image</a>
+        <button class="btn btn-secondary" id="btn-report">⚠️ Report Content</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Report Content Modal -->
+  <div id="report-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Report Content</h2>
+        <button class="close-btn" id="close-modal">&times;</button>
+      </div>
+
+      <div id="report-alert"></div>
+
+      <form id="report-form" style="display: none;">
+        <div class="form-group">
+          <label for="flag-type">Report Type <span style="color: #ef4444;">*</span></label>
+          <select id="flag-type" required>
+            <option value="">– Select a reason –</option>
+            <option value="copyright">Copyright Infringement</option>
+            <option value="gdpr">Right to be Forgotten (GDPR)</option>
+            <option value="illegal">Illegal Content</option>
+            <option value="abuse">Abuse / Harassment</option>
+            <option value="spam">Spam / Scam</option>
+            <option value="other">Other</option>
+          </select>
+          <small class="flag-reason" id="flag-reason-help"></small>
+        </div>
+
+        <div class="form-group">
+          <label for="reason">Detailed Description <span style="color: #ef4444;">*</span></label>
+          <textarea id="reason" placeholder="Please provide specific details about why this content should be removed (minimum 10 characters)…" required></textarea>
+          <small class="help-text">Minimum 10 characters. This information helps us review your report efficiently.</small>
+        </div>
+
+        <div class="form-group">
+          <label for="reporter-name">Your Name <span style="color: #999;">(optional)</span></label>
+          <input type="text" id="reporter-name" placeholder="Your name" maxlength="100" />
+        </div>
+
+        <div class="form-group">
+          <label for="reporter-email">Your Email <span style="color: #999;">(optional)</span></label>
+          <input type="email" id="reporter-email" placeholder="your.email@example.com" maxlength="255" />
+          <small class="help-text">Provide your email if you'd like us to contact you with updates on this report.</small>
+        </div>
+
+        <div class="form-group">
+          <label for="reporter-country">Your Country <span style="color: #999;">(optional)</span></label>
+          <input type="text" id="reporter-country" placeholder="e.g., US, DE, FR" maxlength="2" />
+          <small class="help-text">ISO country code (2 letters). Helps us understand regional concerns.</small>
+        </div>
+
+        <div class="form-group">
+          <div class="alert info">
+            <strong>Privacy Notice:</strong> This report will be reviewed by our moderation team. Your personal information will be kept confidential and used only for responding to your report.
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" id="btn-cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary">Submit Report</button>
+        </div>
+      </form>
+
+      <div id="form-loading" class="loading">
+        <div style="text-align: center; padding: 2rem;">
+          <p>📤 Submitting your report…</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const modal = document.getElementById('report-modal');
+    const form = document.getElementById('report-form');
+    const btnReport = document.getElementById('btn-report');
+    const closeBtn = document.getElementById('close-modal');
+    const cancelBtn = document.getElementById('btn-cancel');
+    const flagTypeSelect = document.getElementById('flag-type');
+    const reportAlert = document.getElementById('report-alert');
+    const formLoading = document.getElementById('form-loading');
+
+    const flagReasons = {
+      copyright: 'Submit proof of copyright ownership or valid takedown notice (e.g., DMCA notice).',
+      gdpr: 'Request removal under GDPR Article 17 (Right to be Forgotten). You must be the subject or authorized representative.',
+      illegal: 'Report content that violates laws (hate speech, violence, exploitation, etc.). Provide relevant legal reference.',
+      abuse: 'Report harassment, defamation, or content that violates platform terms of service.',
+      spam: 'Report spam, scams, or fraudulent content.',
+      other: 'Describe another reason this content should be reviewed.',
+    };
+
+    // Load image details from URL
+    async function loadImage() {
+      const slug = new URLSearchParams(window.location.search).get('s');
+      if (!slug) {
+        document.getElementById('image-title').textContent = 'Image not found';
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/images/${slug}`);
+        if (!response.ok) {
+          document.getElementById('image-title').textContent = 'Image not found';
+          return;
+        }
+
+        const image = response.json().then(data => {
+          document.getElementById('image-display').src = `/i/${slug}`;
+          document.getElementById('image-title').textContent = data.original_name || slug;
+          document.getElementById('meta-views').textContent = data.view_count || '0';
+          document.getElementById('meta-size').textContent = formatBytes(data.size);
+          document.getElementById('meta-type').textContent = data.mime_type;
+          document.getElementById('meta-date').textContent = new Date(data.created_at).toLocaleDateString();
+          document.getElementById('view-link').href = `/i/${slug}`;
+        });
+      } catch (err) {
+        console.error('Error loading image:', err);
+        document.getElementById('image-title').textContent = 'Error loading image';
+      }
+    }
+
+    function formatBytes(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    }
+
+    btnReport.addEventListener('click', () => {
+      modal.classList.add('show');
+      form.style.display = 'block';
+      formLoading.style.display = 'none';
+      reportAlert.innerHTML = '';
+    });
+
+    closeBtn.addEventListener('click', () => {
+      modal.classList.remove('show');
+      form.reset();
+    });
+
+    cancelBtn.addEventListener('click', () => {
+      modal.classList.remove('show');
+      form.reset();
+    });
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.classList.remove('show');
+        form.reset();
+      }
+    });
+
+    flagTypeSelect.addEventListener('change', (e) => {
+      const helpText = document.getElementById('flag-reason-help');
+      if (e.target.value) {
+        helpText.textContent = flagReasons[e.target.value];
+        helpText.style.display = 'block';
+      } else {
+        helpText.style.display = 'none';
+      }
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const slug = new URLSearchParams(window.location.search).get('s');
+      const flagType = document.getElementById('flag-type').value;
+      const reason = document.getElementById('reason').value;
+      const reporterName = document.getElementById('reporter-name').value || null;
+      const reporterEmail = document.getElementById('reporter-email').value || null;
+      const reporterCountry = document.getElementById('reporter-country').value || null;
+
+      if (!flagType || !reason) {
+        showAlert('Please fill in all required fields.', 'error');
+        return;
+      }
+
+      form.style.display = 'none';
+      formLoading.style.display = 'block';
+      reportAlert.innerHTML = '';
+
+      try {
+        // First, get the image ID from slug
+        const imageResponse = await fetch(`/api/images/${slug}`);
+        if (!imageResponse.ok) {
+          throw new Error('Could not find image');
+        }
+        const imageData = await imageResponse.json();
+
+        // Submit the flag
+        const flagResponse = await fetch('/api/flags', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            imageId: imageData.id,
+            flagType,
+            reason,
+            reporterName,
+            reporterEmail,
+            reporterCountry,
+          }),
+        });
+
+        if (!flagResponse.ok) {
+          const error = await flagResponse.json();
+          throw new Error(error.error || 'Failed to submit report');
+        }
+
+        formLoading.style.display = 'none';
+        reportAlert.innerHTML = `<div class="alert success">✅ Thank you! Your report has been submitted. Our team will review it as soon as possible.</div>`;
+
+        setTimeout(() => {
+          modal.classList.remove('show');
+          form.reset();
+          flagTypeSelect.dispatchEvent(new Event('change'));
+          form.style.display = 'block';
+          formLoading.style.display = 'none';
+        }, 2000);
+      } catch (err) {
+        formLoading.style.display = 'none';
+        form.style.display = 'block';
+        showAlert(err.message || 'Error submitting report', 'error');
+      }
+    });
+
+    function showAlert(message, type) {
+      reportAlert.innerHTML = `<div class="alert ${type}">${message}</div>`;
+    }
+
+    // Load image on page load
+    loadImage();
+  </script>
+</body>
+</html>

@@ -1,5 +1,11 @@
 #!/usr/bin/env node
-'use strict';
+
+import dotenv from 'dotenv';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import SqliteAdapter from '../db/adapters/sqlite.js';
+import PostgresAdapter from '../db/adapters/postgresql.js';
 
 /**
  * Database replication / migration script.
@@ -28,10 +34,10 @@
  *   node scripts/db-replicate.js --migrate
  */
 
-require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const path = require('path');
-const fs = require('fs');
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'imghoster.db');
 
@@ -39,13 +45,11 @@ function createAdapter(dbType, config) {
   const type = (dbType || 'sqlite').toLowerCase();
   switch (type) {
     case 'sqlite': {
-      const SqliteAdapter = require('../db/adapters/sqlite');
       return new SqliteAdapter();
     }
     case 'postgresql':
     case 'postgres':
     case 'pg': {
-      const PostgresAdapter = require('../db/adapters/postgresql');
       return new PostgresAdapter();
     }
     default:

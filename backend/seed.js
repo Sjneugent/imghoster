@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-'use strict';
+
+import dotenv from 'dotenv';
+import path from 'node:path';
+import readline from 'node:readline';
+import { fileURLToPath } from 'node:url';
+import { initDB, createUser, getUserByUsername } from './db/index.js';
 
 /**
  * Seed script – creates the initial admin user.
@@ -7,11 +12,10 @@
  * Defaults: username=admin  password=ChangeMe123!
  */
 
-require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const path = require('path');
-const readline = require('readline');
-const { initDB, createUser, getUserByUsername } = require('./db');
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'imghoster.db');
 
