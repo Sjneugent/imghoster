@@ -28,41 +28,44 @@ process.env.PORT = '0'; // random port
 process.env.NODE_ENV = 'test';
 
 const db = require('../db');
-db.initDB(TEST_DB);
 
 // ── DB unit tests ─────────────────────────────────────────────────────────────
 describe('Database helpers', () => {
-  test('createUser / getUserByUsername', () => {
-    const id = db.createUser('testuser', 'Password1!', false);
+  before(async () => {
+    await db.initDB(TEST_DB);
+  });
+
+  test('createUser / getUserByUsername', async () => {
+    const id = await db.createUser('testuser', 'Password1!', false);
     assert.ok(id > 0, 'should return an auto-increment id');
 
-    const user = db.getUserByUsername('testuser');
+    const user = await db.getUserByUsername('testuser');
     assert.equal(user.username, 'testuser');
     assert.equal(user.is_admin, 0);
   });
 
-  test('verifyPassword – correct password', () => {
-    const user = db.getUserByUsername('testuser');
-    assert.ok(db.verifyPassword('Password1!', user.password_hash));
+  test('verifyPassword – correct password', async () => {
+    const user = await db.getUserByUsername('testuser');
+    assert.ok(await db.verifyPassword('Password1!', user.password_hash));
   });
 
-  test('verifyPassword – wrong password', () => {
-    const user = db.getUserByUsername('testuser');
-    assert.equal(db.verifyPassword('wrong', user.password_hash), false);
+  test('verifyPassword – wrong password', async () => {
+    const user = await db.getUserByUsername('testuser');
+    assert.equal(await db.verifyPassword('wrong', user.password_hash), false);
   });
 
-  test('getUserByUsername is case-insensitive', () => {
-    const u = db.getUserByUsername('TESTUSER');
+  test('getUserByUsername is case-insensitive', async () => {
+    const u = await db.getUserByUsername('TESTUSER');
     assert.ok(u, 'should find user regardless of case');
   });
 
-  test('createUser – duplicate username throws', () => {
-    assert.throws(() => db.createUser('testuser', 'AnotherPass1!'), /UNIQUE/);
+  test('createUser – duplicate username throws', async () => {
+    await assert.rejects(() => db.createUser('testuser', 'AnotherPass1!'), /UNIQUE/);
   });
 
-  test('createImage / getImageBySlug / slugExists', () => {
-    const userId = db.getUserByUsername('testuser').id;
-    const imgId = db.createImage({
+  test('createImage / getImageBySlug / slugExists', async () => {
+    const userId = (await db.getUserByUsername('testuser')).id;
+    const imgId = await db.createImage({
       filename: 'abc123.jpg',
       originalName: 'my-photo.jpg',
       slug: 'my-photo',
@@ -71,37 +74,37 @@ describe('Database helpers', () => {
       userId,
     });
     assert.ok(imgId > 0);
-    assert.ok(db.slugExists('my-photo'));
-    assert.equal(db.slugExists('nonexistent'), false);
+    assert.ok(await db.slugExists('my-photo'));
+    assert.equal(await db.slugExists('nonexistent'), false);
 
-    const img = db.getImageBySlug('my-photo');
+    const img = await db.getImageBySlug('my-photo');
     assert.equal(img.slug, 'my-photo');
     assert.equal(img.size, 4096);
   });
 
-  test('listImagesByUser', () => {
-    const userId = db.getUserByUsername('testuser').id;
-    const list = db.listImagesByUser(userId);
+  test('listImagesByUser', async () => {
+    const userId = (await db.getUserByUsername('testuser')).id;
+    const list = await db.listImagesByUser(userId);
     assert.ok(list.length >= 1);
     assert.equal(list[0].user_id, userId);
   });
 
-  test('recordView / getImageStats', () => {
-    const userId = db.getUserByUsername('testuser').id;
-    const img = db.getImageBySlug('my-photo');
+  test('recordView / getImageStats', async () => {
+    const userId = (await db.getUserByUsername('testuser')).id;
+    const img = await db.getImageBySlug('my-photo');
 
-    db.recordView(img.id, '1.2.3.4', 'https://github.com');
-    db.recordView(img.id, '5.6.7.8', null);
+    await db.recordView(img.id, '1.2.3.4', 'https://github.com');
+    await db.recordView(img.id, '5.6.7.8', null);
 
-    const stats = db.getImageStats(userId);
+    const stats = await db.getImageStats(userId);
     const row = stats.find(s => s.slug === 'my-photo');
     assert.ok(row, 'stats row should exist');
     assert.equal(row.view_count, 2);
   });
 
-  test('deleteImage removes record', () => {
-    const userId = db.getUserByUsername('testuser').id;
-    const imgId2 = db.createImage({
+  test('deleteImage removes record', async () => {
+    const userId = (await db.getUserByUsername('testuser')).id;
+    const imgId2 = await db.createImage({
       filename: 'del.jpg',
       originalName: 'del.jpg',
       slug: 'to-delete',
@@ -109,55 +112,68 @@ describe('Database helpers', () => {
       size: 100,
       userId,
     });
-    db.deleteImage(imgId2);
-    assert.equal(db.getImageBySlug('to-delete'), undefined);
+    await db.deleteImage(imgId2);
+    assert.equal(await db.getImageBySlug('to-delete'), undefined);
   });
 
-  test('listUsers / deleteUser', () => {
-    db.createUser('tempuser', 'TempPass1!', false);
-    const before = db.listUsers().length;
-    const temp = db.getUserByUsername('tempuser');
-    db.deleteUser(temp.id);
-    const after = db.listUsers().length;
-    assert.equal(after, before - 1);
+  test('listUsers / deleteUser', async () => {
+    await db.createUser('tempuser', 'TempPass1!', false);
+    const beforeCount = (await db.listUsers()).length;
+    const temp = await db.getUserByUsername('tempuser');
+    await db.deleteUser(temp.id);
+    const afterCount = (await db.listUsers()).length;
+    assert.equal(afterCount, beforeCount - 1);
   });
 
-  test('updateUserPassword', () => {
-    db.updateUserPassword(db.getUserByUsername('testuser').id, 'NewPass999!');
-    const user = db.getUserByUsername('testuser');
-    assert.ok(db.verifyPassword('NewPass999!', user.password_hash));
-    assert.equal(db.verifyPassword('Password1!', user.password_hash), false);
+  test('updateUserPassword', async () => {
+    await db.updateUserPassword((await db.getUserByUsername('testuser')).id, 'NewPass999!');
+    const user = await db.getUserByUsername('testuser');
+    assert.ok(await db.verifyPassword('NewPass999!', user.password_hash));
+    assert.equal(await db.verifyPassword('Password1!', user.password_hash), false);
   });
 
-  test('searchImages – finds by slug', () => {
-    const userId = db.getUserByUsername('testuser').id;
-    const results = db.searchImages('my-photo', userId, false);
+  test('searchImages – finds by slug', async () => {
+    const userId = (await db.getUserByUsername('testuser')).id;
+    const results = await db.searchImages('my-photo', userId, false);
     assert.ok(results.length >= 1, 'should find at least one result');
     assert.ok(results.some(r => r.slug === 'my-photo'));
   });
 
-  test('searchImages – admin searches all users', () => {
-    const results = db.searchImages('my-photo', null, true);
+  test('searchImages – admin searches all users', async () => {
+    const results = await db.searchImages('my-photo', null, true);
     assert.ok(results.length >= 1, 'admin should find results across all users');
     assert.ok(results[0].username, 'admin search should include username');
   });
 
-  test('searchImages – no results for non-matching query', () => {
-    const userId = db.getUserByUsername('testuser').id;
-    const results = db.searchImages('zzz-nonexistent-zzz', userId, false);
+  test('searchImages – no results for non-matching query', async () => {
+    const userId = (await db.getUserByUsername('testuser')).id;
+    const results = await db.searchImages('zzz-nonexistent-zzz', userId, false);
     assert.equal(results.length, 0);
   });
 
-  test('getImagesByIds – returns matching images', () => {
-    const img = db.getImageBySlug('my-photo');
-    const results = db.getImagesByIds([img.id]);
+  test('getImagesByIds – returns matching images', async () => {
+    const img = await db.getImageBySlug('my-photo');
+    const results = await db.getImagesByIds([img.id]);
     assert.equal(results.length, 1);
     assert.equal(results[0].slug, 'my-photo');
   });
 
-  test('getImagesByIds – returns empty for no IDs', () => {
-    const results = db.getImagesByIds([]);
+  test('getImagesByIds – returns empty for no IDs', async () => {
+    const results = await db.getImagesByIds([]);
     assert.equal(results.length, 0);
+  });
+
+  test('exportData / importData round-trip', async () => {
+    const exported = await db.exportData();
+    assert.ok(exported.users.length >= 1, 'should have at least one user');
+    assert.ok(exported.images.length >= 1, 'should have at least one image');
+    assert.ok(Array.isArray(exported.image_views), 'should have image_views array');
+
+    // Import into the same DB (verifies the import logic works)
+    await db.importData(exported);
+    const afterImport = await db.exportData();
+    assert.equal(afterImport.users.length, exported.users.length);
+    assert.equal(afterImport.images.length, exported.images.length);
   });
 });
 
@@ -172,11 +188,12 @@ describe('HTTP API', () => {
     process.env.DB_PATH = HTTP_DB;
 
     const dbHttp = require('../db');
-    dbHttp.initDB(HTTP_DB);
-    adminId = dbHttp.createUser('admin', 'AdminPass1!', true);
-    dbHttp.createUser('regular', 'RegPass1!', false);
+    await dbHttp.initDB(HTTP_DB);
+    adminId = await dbHttp.createUser('admin', 'AdminPass1!', true);
+    await dbHttp.createUser('regular', 'RegPass1!', false);
 
-    server = require('../server');
+    // server.js now exports a Promise that resolves to the server
+    server = await require('../server');
 
     // Wait for the server to start listening
     await new Promise((resolve, reject) => {

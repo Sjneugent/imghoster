@@ -10,9 +10,9 @@ const logger = require('../logger');
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', '..', 'uploads');
 
 // GET /i/:slug  – serve an image publicly and record a view
-router.get('/:slug', (req, res) => {
+router.get('/:slug', async (req, res) => {
   try {
-    const image = getImageBySlug(req.params.slug);
+    const image = await getImageBySlug(req.params.slug);
     if (!image) {
       logger.warn('Image not found for slug', { slug: req.params.slug });
       return res.status(404).send('Image not found.');
@@ -27,7 +27,7 @@ router.get('/:slug', (req, res) => {
     // Record the view (fire-and-forget; don't count self-referrer from the panel)
     const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
     const referrer = req.get('referer') || req.get('referrer') || null;
-    try { recordView(image.id, ip, referrer); } catch (viewErr) {
+    try { await recordView(image.id, ip, referrer); } catch (viewErr) {
       logger.warn('Failed to record view', { slug: req.params.slug, error: viewErr.message });
     }
 

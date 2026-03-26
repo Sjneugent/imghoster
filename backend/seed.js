@@ -26,17 +26,17 @@ async function prompt(question) {
 }
 
 (async () => {
-  initDB(DB_PATH);
+  await initDB(DB_PATH);
 
   const username = process.argv[2] || await prompt('Admin username [admin]: ') || 'admin';
   const password = process.argv[3] || await prompt('Admin password [ChangeMe123!]: ') || 'ChangeMe123!';
 
-  if (getUserByUsername(username)) {
+  if (await getUserByUsername(username)) {
     console.log(`User "${username}" already exists. Skipping.`);
     process.exit(0);
   }
 
-  const id = createUser(username, password, true);
+  const id = await createUser(username, password, true);
   console.log(`Admin user "${username}" created (id=${id}).`);
   console.log('Remember to change the default password before going to production!');
 })();

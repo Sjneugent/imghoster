@@ -9,7 +9,14 @@
     "dev": "node --watch server.js",
     "dev:secure": "LOCALHOST_BYPASS=false node --watch server.js",
     "seed": "node seed.js",
-    "test": "node --test tests/api.test.js"
+    "test": "node --test tests/api.test.js",
+    "db:backup": "node scripts/db-backup.js",
+    "db:restore": "node scripts/db-restore.js",
+    "db:migrate": "node scripts/db-migrate.js --reinit",
+    "db:status": "node scripts/db-migrate.js --status",
+    "db:export": "node scripts/db-replicate.js --export",
+    "db:import": "node scripts/db-replicate.js --import",
+    "db:replicate": "node scripts/db-replicate.js --migrate"
   },
   "dependencies": {
     "@hapi/bourne": "^3.0.0",
@@ -24,5 +31,8 @@
     "helmet": "^7.1.0",
     "multer": "^2.1.1",
     "uuid": "^10.0.0"
+  },
+  "optionalDependencies": {
+    "pg": "^8.13.0"
   }
 }

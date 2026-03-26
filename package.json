@@ -10,6 +10,13 @@
     "dev": "cd backend && npm run dev",
     "dev:secure": "cd backend && npm run dev:secure",
     "seed": "cd backend && node seed.js",
-    "test": "cd backend && npm test"
+    "test": "cd backend && npm test",
+    "db:backup": "cd backend && npm run db:backup",
+    "db:restore": "cd backend && npm run db:restore",
+    "db:migrate": "cd backend && npm run db:migrate",
+    "db:status": "cd backend && npm run db:status",
+    "db:export": "cd backend && npm run db:export",
+    "db:import": "cd backend && npm run db:import",
+    "db:replicate": "cd backend && npm run db:replicate"
   }
 }

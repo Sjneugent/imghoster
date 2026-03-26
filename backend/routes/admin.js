@@ -10,9 +10,9 @@ const logger = require('../logger');
 router.use(requireAdmin);
 
 // GET /api/admin/users
-router.get('/users', (_req, res) => {
+router.get('/users', async (_req, res) => {
   try {
-    res.json(listUsers());
+    res.json(await listUsers());
   } catch (err) {
     logger.error('Failed to list users', { error: err.message });
     if (!res.headersSent) {
@@ -22,7 +22,7 @@ router.get('/users', (_req, res) => {
 });
 
 // POST /api/admin/users
-router.post('/users', (req, res) => {
+router.post('/users', async (req, res) => {
   const { username, password, isAdmin } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password are required.' });
@@ -31,7 +31,7 @@ router.post('/users', (req, res) => {
     return res.status(400).json({ error: 'Password must be at least 8 characters.' });
   }
   try {
-    const id = createUser(username, password, !!isAdmin);
+    const id = await createUser(username, password, !!isAdmin);
     logger.info('User created', { id, username, isAdmin: !!isAdmin });
     res.status(201).json({ id, username });
   } catch (err) {
@@ -46,16 +46,16 @@ router.post('/users', (req, res) => {
 });
 
 // PATCH /api/admin/users/:id/password
-router.patch('/users/:id/password', (req, res) => {
+router.patch('/users/:id/password', async (req, res) => {
   try {
     const { password } = req.body;
     if (!password || password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters.' });
     }
-    const user = getUserById(Number(req.params.id));
+    const user = await getUserById(Number(req.params.id));
     if (!user) return res.status(404).json({ error: 'User not found.' });
 
-    updateUserPassword(user.id, password);
+    await updateUserPassword(user.id, password);
     logger.info('User password updated', { userId: user.id, username: user.username });
     res.json({ message: 'Password updated.' });
   } catch (err) {
@@ -67,7 +67,7 @@ router.patch('/users/:id/password', (req, res) => {
 });
 
 // DELETE /api/admin/users/:id
-router.delete('/users/:id', (req, res) => {
+router.delete('/users/:id', async (req, res) => {
   try {
     const targetId = Number(req.params.id);
 
@@ -76,10 +76,10 @@ router.delete('/users/:id', (req, res) => {
       return res.status(400).json({ error: 'You cannot delete your own account.' });
     }
 
-    const user = getUserById(targetId);
+    const user = await getUserById(targetId);
     if (!user) return res.status(404).json({ error: 'User not found.' });
 
-    deleteUser(targetId);
+    await deleteUser(targetId);
     logger.info('User deleted', { userId: targetId, username: user.username });
     res.json({ message: 'User deleted.' });
   } catch (err) {

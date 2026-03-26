@@ -7,7 +7,7 @@ const { isLocalhost } = require('../middleware/requireAuth');
 const logger = require('../logger');
 
 // POST /api/auth/login
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   try {
     const { username, password, rememberMe } = req.body;
 
@@ -15,8 +15,8 @@ router.post('/login', (req, res) => {
       return res.status(400).json({ error: 'Username and password are required.' });
     }
 
-    const user = getUserByUsername(username);
-    if (!user || !verifyPassword(password, user.password_hash)) {
+    const user = await getUserByUsername(username);
+    if (!user || !(await verifyPassword(password, user.password_hash))) {
       logger.warn('Failed login attempt', { username, ip: req.ip });
       return res.status(401).json({ error: 'Invalid username or password.' });
     }

@@ -165,9 +165,19 @@ process.on('unhandledRejection', (reason) => {
 });
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
-initDB(DB_PATH);
-const server = app.listen(PORT, HOST, () => {
-  logger.info(`ImgHoster listening on http://${HOST}:${server.address().port}`);
+async function start() {
+  await initDB(DB_PATH);
+
+  const server = app.listen(PORT, HOST, () => {
+    logger.info(`ImgHoster listening on http://${HOST}:${server.address().port}`);
+  });
+
+  return server;
+}
+
+const serverPromise = start().catch((err) => {
+  logger.error('Startup failed', { error: err.message, stack: err.stack });
+  process.exit(1);
 });
 
-module.exports = server;
+module.exports = serverPromise;

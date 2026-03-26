@@ -66,15 +66,15 @@ function sanitiseSlug(raw) {
 }
 
 // Return a fallback user ID for unauthenticated localhost requests
-function getLocalhostFallbackUserId() {
-  const users = listUsers();
+async function getLocalhostFallbackUserId() {
+  const users = await listUsers();
   const admin = users.find(u => u.is_admin === 1);
   return admin ? admin.id : (users.length > 0 ? users[0].id : null);
 }
 
 // ── Upload ────────────────────────────────────────────────────────────────────
 // POST /api/images/upload
-router.post('/upload', requireAuth, upload.single('image'), (req, res) => {
+router.post('/upload', requireAuth, upload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No image file provided.' });
@@ -85,20 +85,20 @@ router.post('/upload', requireAuth, upload.single('image'), (req, res) => {
       slug = path.basename(req.file.filename, path.extname(req.file.filename));
     }
 
-    if (slugExists(slug)) {
+    if (await slugExists(slug)) {
       // Remove uploaded file and reject
       fs.unlink(req.file.path, () => {});
       return res.status(409).json({ error: `The URL slug "${slug}" is already taken.` });
     }
 
-    const userId = req.session.userId || (isLocalhost(req) ? getLocalhostFallbackUserId() : null);
+    const userId = req.session.userId || (isLocalhost(req) ? await getLocalhostFallbackUserId() : null);
     if (!userId) {
       fs.unlink(req.file.path, () => {});
       logger.warn('Upload rejected: no user available', { ip: req.ip });
       return res.status(500).json({ error: 'No user available to associate upload with.' });
     }
 
-    const id = createImage({
+    const id = await createImage({
       filename: req.file.filename,
       originalName: req.file.originalname,
       slug,
@@ -133,7 +133,7 @@ router.post('/upload', requireAuth, upload.single('image'), (req, res) => {
 // GET /api/images          – own images
 // GET /api/images?all=1    – all images (admin only)
 // GET /api/images?q=term   – search images
-router.get('/', requireAuth, (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
     const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const showAll = req.query.all === '1';
@@ -142,18 +142,18 @@ router.get('/', requireAuth, (req, res) => {
       const isAdmin = showAll && (req.session.isAdmin || isLocalhost(req));
       const userId = isAdmin ? null : (req.session.userId || null);
       if (isLocalhost(req) && !req.session.userId) {
-        return res.json(searchImages(query, null, true));
+        return res.json(await searchImages(query, null, true));
       }
-      return res.json(searchImages(query, userId, isAdmin));
+      return res.json(await searchImages(query, userId, isAdmin));
     }
 
     if (isLocalhost(req) && !req.session.userId) {
-      return res.json(listAllImages());
+      return res.json(await listAllImages());
     }
     if (showAll && (req.session.isAdmin || isLocalhost(req))) {
-      return res.json(listAllImages());
+      return res.json(await listAllImages());
     }
-    res.json(listImagesByUser(req.session.userId));
+    res.json(await listImagesByUser(req.session.userId));
   } catch (err) {
     logger.error('Failed to list images', { error: err.message });
     if (!res.headersSent) {
@@ -164,7 +164,7 @@ router.get('/', requireAuth, (req, res) => {
 
 // ── Bulk download as zip ──────────────────────────────────────────────────────
 // POST /api/images/download   body: { ids: [1, 2, 3] }
-router.post('/download', requireAuth, (req, res) => {
+router.post('/download', requireAuth, async (req, res) => {
   try {
     const ids = req.body.ids;
     if (!Array.isArray(ids) || ids.length === 0) {
@@ -184,7 +184,7 @@ router.post('/download', requireAuth, (req, res) => {
       return res.status(400).json({ error: 'No valid image IDs provided.' });
     }
 
-    const images = getImagesByIds(safeIds);
+    const images = await getImagesByIds(safeIds);
     if (images.length === 0) {
       return res.status(404).json({ error: 'No images found.' });
     }
@@ -248,9 +248,9 @@ router.post('/download', requireAuth, (req, res) => {
 
 // ── Single image metadata ─────────────────────────────────────────────────────
 // GET /api/images/:id
-router.get('/:id', requireAuth, (req, res) => {
+router.get('/:id', requireAuth, async (req, res) => {
   try {
-    const image = getImageById(Number(req.params.id));
+    const image = await getImageById(Number(req.params.id));
     if (!image) return res.status(404).json({ error: 'Image not found.' });
 
     // Non-admins can only see their own images; localhost gets full access
@@ -268,9 +268,9 @@ router.get('/:id', requireAuth, (req, res) => {
 
 // ── Delete ────────────────────────────────────────────────────────────────────
 // DELETE /api/images/:id
-router.delete('/:id', requireAuth, (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
-    const image = getImageById(Number(req.params.id));
+    const image = await getImageById(Number(req.params.id));
     if (!image) return res.status(404).json({ error: 'Image not found.' });
 
     if (!isLocalhost(req) && !req.session.isAdmin && image.user_id !== req.session.userId) {
@@ -285,7 +285,7 @@ router.delete('/:id', requireAuth, (req, res) => {
       }
     });
 
-    deleteImage(image.id);
+    await deleteImage(image.id);
     logger.info('Image deleted', { id: image.id, slug: image.slug });
     res.json({ message: 'Image deleted.' });
   } catch (err) {
