@@ -274,7 +274,7 @@ class PostgresAdapter extends BaseAdapter {
     const base = `
       SELECT DATE(viewed_at) AS day, COUNT(*) AS views
       FROM image_views
-      WHERE viewed_at >= NOW() - ($1 || ' days')::INTERVAL
+      WHERE viewed_at >= NOW() - INTERVAL '1 day' * $1
     `;
 
     if (imageId) {

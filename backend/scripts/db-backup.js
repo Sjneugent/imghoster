@@ -42,7 +42,7 @@ const DB_TYPE = (process.env.DB_TYPE || 'sqlite').toLowerCase();
       // Use better-sqlite3's backup API for a consistent online backup
       const adapter = require('../db').getDB();
       const rawDb = adapter.getRawDB();
-      await rawDb.backup(outPath);
+      rawDb.backup(outPath);
 
       console.log(`✅ SQLite backup saved to: ${outPath}`);
       console.log(`   Size: ${(fs.statSync(outPath).size / 1024).toFixed(1)} KB`);
