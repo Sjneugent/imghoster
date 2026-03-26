@@ -178,6 +178,12 @@ function escHtml(s) {
         const showUser = me.isAdmin && showAllCheckbox.checked;
         const origin = window.location.origin;
         const checked = selectedIds.has(img.id) ? 'checked' : '';
+          const commentHtml = img.comment
+            ? `<div style="margin-top:.35rem;font-size:.78rem;color:var(--text-muted)"><strong>Comment:</strong> ${escHtml(img.comment)}</div>`
+            : '';
+          const tagsHtml = img.tags
+            ? `<div style="margin-top:.2rem;font-size:.76rem;color:var(--accent)"><strong>Tags:</strong> ${escHtml(img.tags)}</div>`
+            : '';
         return `
         <tr>
           <td><input type="checkbox" class="img-checkbox" data-id="${img.id}" ${checked} /></td>
@@ -188,6 +194,8 @@ function escHtml(s) {
               <span style="flex:1">/i/${escHtml(img.slug)}</span>
               <button class="copy-btn" data-url="${escHtml(origin + url)}" title="Copy URL">\uD83D\uDCCB</button>
             </div>
+              ${commentHtml}
+              ${tagsHtml}
           </td>
           <td ${showUser ? '' : 'style="display:none"'}>${escHtml(img.username || '')}</td>
           <td>${App.formatBytes(img.size)}</td>

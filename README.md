@@ -9,6 +9,7 @@ Minimal personal image hosting with a Node.js/Express backend, SQLite database a
 - [Features](#features)
 - [Stack](#stack)
 - [Quick Start](#quick-start)
+- [HTTP-Only NGINX (No SSL)](#http-only-nginx-no-ssl)
 - [SSL Certificate Setup for NGINX](#ssl-certificate-setup-for-nginx)
   - [Option A – Let's Encrypt with Certbot (Recommended for Production)](#option-a--lets-encrypt-with-certbot-recommended-for-production)
   - [Option B – Self-Signed Certificate (Local Development / Testing)](#option-b--self-signed-certificate-local-development--testing)
@@ -106,6 +107,42 @@ sudo cp nginx/imghoster.conf /etc/nginx/sites-available/imghoster
 sudo ln -s /etc/nginx/sites-available/imghoster /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
+
+### 6. Optional: HTTP-only NGINX profile (no SSL)
+
+If you need to run without TLS (for local/LAN/testing), use the included
+`nginx/imghoster-insecure.conf` profile instead of the SSL profile.
+
+```bash
+sudo cp nginx/imghoster-insecure.conf /etc/nginx/sites-available/imghoster-insecure
+
+# Disable SSL profile, enable HTTP-only profile
+sudo rm -f /etc/nginx/sites-enabled/imghoster
+sudo ln -sf /etc/nginx/sites-available/imghoster-insecure /etc/nginx/sites-enabled/imghoster-insecure
+
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+To switch back to HTTPS later:
+
+```bash
+sudo rm -f /etc/nginx/sites-enabled/imghoster-insecure
+sudo ln -sf /etc/nginx/sites-available/imghoster /etc/nginx/sites-enabled/imghoster
+
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+---
+
+## HTTP-Only NGINX (No SSL)
+
+ImgHoster now includes two NGINX profiles in `nginx/`:
+
+- `imghoster.conf` - HTTPS + HTTP->HTTPS redirect
+- `imghoster-insecure.conf` - HTTP-only reverse proxy (no TLS)
+
+Use the HTTP-only profile only when TLS is terminated somewhere else or for
+non-production environments.
 
 ---
 

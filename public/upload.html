@@ -39,14 +39,13 @@
             <label class="form-label">Image File</label>
             <div class="drop-zone" id="drop-zone">
               <input type="file" id="file-input" name="image"
-                     accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml" />
+                accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml" multiple />
               <div class="dz-icon">📁</div>
               <div class="dz-label">Drag &amp; drop an image here, or <strong>click to browse</strong></div>
               <p style="font-size:.8rem;color:var(--text-muted);margin-top:.5rem">
-                JPEG, PNG, GIF, WebP, SVG — max 20 MB
+                JPEG, PNG, GIF, WebP, SVG - up to 5 files, 20 MB each
               </p>
-              <div class="dz-preview" id="dz-preview" style="display:none">
-                <img id="preview-img" src="" alt="Preview" />
+              <div class="dz-preview dz-preview-grid" id="dz-preview" style="display:none" aria-live="polite">
               </div>
             </div>
           </div>
@@ -59,8 +58,29 @@
                    pattern="[a-zA-Z0-9_-]+" maxlength="120" />
             <p class="form-hint">
               Leave blank to auto-generate. Only letters, numbers, hyphens and underscores.
-              The image will be accessible at <code>/i/&lt;slug&gt;</code>.
+              The image will be accessible at <code>/i/&lt;slug&gt;</code>. Custom slug is only used for single-file uploads.
             </p>
+          </div>
+
+          <div class="form-group">
+            <label class="checkbox-row" for="compress-image">
+              <input type="checkbox" id="compress-image" name="compress" />
+              <span>Compress image before upload</span>
+            </label>
+            <p class="form-hint">Applies to JPEG, PNG, and WebP uploads.</p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="comment">Comment (optional)</label>
+            <textarea class="form-control" id="comment" name="comment" rows="3" maxlength="1000"
+              placeholder="Add a note about these images..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="tags">Tags (optional)</label>
+            <input class="form-control" type="text" id="tags" name="tags" maxlength="500"
+              placeholder="e.g. vacation, screenshot, design" />
+            <p class="form-hint">Separate tags with commas.</p>
           </div>
 
           <button class="btn btn-primary" type="submit" id="upload-btn" disabled>

@@ -264,6 +264,53 @@ describe('HTTP API', () => {
     assert.ok(r.body.error);
   });
 
+  test('GET /api/auth/captcha + POST /api/auth/register – creates account', async () => {
+    const captchaResp = await request('GET', '/api/auth/captcha');
+    assert.equal(captchaResp.status, 200);
+    assert.ok(captchaResp.body.svg);
+
+    const captchaCookie = captchaResp.cookies.map(c => c.split(';')[0]).join('; ');
+    assert.ok(captchaCookie, 'captcha request should establish a session cookie');
+
+    const chars = [...captchaResp.body.svg.matchAll(/<text[^>]*>([A-Z0-9])<\/text>/g)].map(m => m[1]);
+    const captchaText = chars.join('');
+    assert.equal(captchaText.length, 6, 'captcha should expose exactly 6 characters');
+
+    const registerResp = await request('POST', '/api/auth/register', {
+      cookies: captchaCookie,
+      body: {
+        email: 'newuser@example.com',
+        username: 'newuser',
+        realName: 'New User',
+        password: 'NewUserPass1!',
+        captcha: captchaText,
+      },
+    });
+
+    assert.equal(registerResp.status, 201, `Expected 201 but got ${registerResp.status}: ${JSON.stringify(registerResp.body)}`);
+    assert.equal(registerResp.body.username, 'newuser');
+    assert.equal(registerResp.body.email, 'newuser@example.com');
+  });
+
+  test('POST /api/auth/register – rejects invalid captcha', async () => {
+    const captchaResp = await request('GET', '/api/auth/captcha');
+    const captchaCookie = captchaResp.cookies.map(c => c.split(';')[0]).join('; ');
+
+    const registerResp = await request('POST', '/api/auth/register', {
+      cookies: captchaCookie,
+      body: {
+        email: 'badcaptcha@example.com',
+        username: 'badcaptcha',
+        realName: 'Bad Captcha',
+        password: 'BadCaptcha1!',
+        captcha: 'WRONG1',
+      },
+    });
+
+    assert.equal(registerResp.status, 400);
+    assert.ok(registerResp.body.error);
+  });
+
   test('POST /api/auth/login – correct credentials returns user info', async () => {
     const r = await request('POST', '/api/auth/login', {
       body: { username: 'admin', password: 'AdminPass1!' },
@@ -324,19 +371,84 @@ describe('HTTP API', () => {
   });
 
   // Helper: perform a multipart upload request
-  function uploadRequest(urlPath, filename, fileContent, mimeType, { cookies = '' } = {}) {
+  function uploadRequest(urlPath, filename, fileContent, mimeType, { cookies = '', fields = {} } = {}) {
     return new Promise((resolve, reject) => {
       const url = new URL(urlPath, baseUrl);
       const boundary = '----TestBoundary' + Date.now();
-      const body = Buffer.concat([
-        Buffer.from(
+      const parts = [];
+
+      for (const [key, value] of Object.entries(fields)) {
+        parts.push(Buffer.from(
           `--${boundary}\r\n` +
-          `Content-Disposition: form-data; name="image"; filename="${filename}"\r\n` +
-          `Content-Type: ${mimeType}\r\n\r\n`
-        ),
-        fileContent,
-        Buffer.from(`\r\n--${boundary}--\r\n`),
-      ]);
+          `Content-Disposition: form-data; name="${key}"\r\n\r\n` +
+          `${value}\r\n`
+        ));
+      }
+
+      parts.push(Buffer.from(
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="image"; filename="${filename}"\r\n` +
+        `Content-Type: ${mimeType}\r\n\r\n`
+      ));
+      parts.push(fileContent);
+      parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+
+      const body = Buffer.concat(parts);
+
+      const opts = {
+        method: 'POST',
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname,
+        headers: {
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': body.length,
+          Cookie: cookies,
+        },
+      };
+
+      const req = http.request(opts, (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          let parsed;
+          try { parsed = JSON.parse(data); } catch { parsed = data; }
+          resolve({ status: res.statusCode, body: parsed });
+        });
+      });
+
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    });
+  }
+
+  function uploadRequestMulti(urlPath, files, { cookies = '', fields = {} } = {}) {
+    return new Promise((resolve, reject) => {
+      const url = new URL(urlPath, baseUrl);
+      const boundary = '----TestBoundary' + Date.now();
+      const parts = [];
+
+      for (const [key, value] of Object.entries(fields)) {
+        parts.push(Buffer.from(
+          `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="${key}"\r\n\r\n` +
+          `${value}\r\n`
+        ));
+      }
+
+      for (const f of files) {
+        parts.push(Buffer.from(
+          `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="image"; filename="${f.filename}"\r\n` +
+          `Content-Type: ${f.mimeType}\r\n\r\n`
+        ));
+        parts.push(f.content);
+        parts.push(Buffer.from('\r\n'));
+      }
+      parts.push(Buffer.from(`--${boundary}--\r\n`));
+
+      const body = Buffer.concat(parts);
 
       const opts = {
         method: 'POST',
@@ -378,6 +490,86 @@ describe('HTTP API', () => {
     assert.ok(r.body.id, 'should return image id');
     assert.ok(r.body.slug, 'should return slug');
     assert.ok(r.body.url, 'should return url');
+  });
+
+  test('POST /api/images/upload – accepts compress flag', async () => {
+    const tinyPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5K3A8AAAAASUVORK5CYII=',
+      'base64'
+    );
+
+    const r = await uploadRequest('/api/images/upload', 'compress-test.png', tinyPng, 'image/png', {
+      fields: { compress: 'true' },
+    });
+
+    assert.equal(r.status, 201, `Expected 201 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.ok(r.body.compression, 'should include compression metadata');
+    assert.equal(r.body.compression.requested, true);
+  });
+
+  test('POST /api/images/upload – supports uploading multiple files', async () => {
+    const tinyPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5K3A8AAAAASUVORK5CYII=',
+      'base64'
+    );
+    const jpegHeader = Buffer.from([
+      0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
+      0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
+    ]);
+
+    const r = await uploadRequestMulti('/api/images/upload', [
+      { filename: 'multi-1.png', content: tinyPng, mimeType: 'image/png' },
+      { filename: 'multi-2.jpg', content: jpegHeader, mimeType: 'image/jpeg' },
+    ]);
+
+    assert.equal(r.status, 201, `Expected 201 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.ok(Array.isArray(r.body.uploaded), 'should return uploaded array for multi-upload');
+    assert.equal(r.body.uploaded.length, 2);
+  });
+
+  test('POST /api/images/upload – supports mixed extensions in one batch', async () => {
+    const tinyPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5K3A8AAAAASUVORK5CYII=',
+      'base64'
+    );
+    const jpegHeader = Buffer.from([
+      0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
+      0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
+    ]);
+    const webpStub = Buffer.from('RIFF0000WEBPVP8 ', 'ascii');
+
+    const r = await uploadRequestMulti('/api/images/upload', [
+      { filename: 'mixed-1.jpg', content: jpegHeader, mimeType: 'image/jpeg' },
+      { filename: 'mixed-2.png', content: tinyPng, mimeType: 'image/png' },
+      { filename: 'mixed-3.webp', content: webpStub, mimeType: 'image/webp' },
+    ]);
+
+    assert.equal(r.status, 201, `Expected 201 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.ok(Array.isArray(r.body.uploaded), 'should return uploaded array for mixed multi-upload');
+    assert.equal(r.body.uploaded.length, 3);
+    assert.ok(r.body.uploaded.every(item => typeof item.url === 'string' && item.url.includes('/i/')));
+  });
+
+  test('POST /api/images/upload – persists optional comment and tags', async () => {
+    const tinyPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5K3A8AAAAASUVORK5CYII=',
+      'base64'
+    );
+
+    const r = await uploadRequest('/api/images/upload', 'meta-test.png', tinyPng, 'image/png', {
+      fields: {
+        comment: 'Homepage hero screenshot',
+        tags: 'design, hero, screenshot',
+      },
+    });
+    assert.equal(r.status, 201, `Expected 201 but got ${r.status}: ${JSON.stringify(r.body)}`);
+
+    const listR = await request('GET', '/api/images');
+    assert.equal(listR.status, 200);
+    const created = listR.body.find((img) => img.slug === r.body.slug);
+    assert.ok(created, 'uploaded image should be returned in list');
+    assert.equal(created.comment, 'Homepage hero screenshot');
+    assert.equal(created.tags, 'design, hero, screenshot');
   });
 
   test('GET /api/images – localhost without auth returns images', async () => {

@@ -27,6 +27,8 @@ class SqliteAdapter extends BaseAdapter {
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL COLLATE NOCASE,
+        email TEXT,
+        real_name TEXT,
         password_hash TEXT NOT NULL,
         is_admin INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -39,6 +41,8 @@ class SqliteAdapter extends BaseAdapter {
         slug TEXT UNIQUE NOT NULL,
         mime_type TEXT NOT NULL,
         size INTEGER NOT NULL,
+        comment TEXT,
+        tags TEXT,
         user_id INTEGER NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -58,6 +62,32 @@ class SqliteAdapter extends BaseAdapter {
       CREATE INDEX IF NOT EXISTS idx_views_image ON image_views(image_id);
     `);
 
+    // Backward-compatible migration for existing DB files.
+    const userCols = this.db.prepare("PRAGMA table_info(users)").all();
+    const hasEmail = userCols.some(c => c.name === 'email');
+    const hasRealName = userCols.some(c => c.name === 'real_name');
+    if (!hasEmail) {
+      this.db.exec('ALTER TABLE users ADD COLUMN email TEXT');
+    }
+    if (!hasRealName) {
+      this.db.exec('ALTER TABLE users ADD COLUMN real_name TEXT');
+    }
+    this.db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique
+      ON users(LOWER(email))
+      WHERE email IS NOT NULL AND email <> '';
+    `);
+
+    const imageCols = this.db.prepare("PRAGMA table_info(images)").all();
+    const hasComment = imageCols.some(c => c.name === 'comment');
+    const hasTags = imageCols.some(c => c.name === 'tags');
+    if (!hasComment) {
+      this.db.exec('ALTER TABLE images ADD COLUMN comment TEXT');
+    }
+    if (!hasTags) {
+      this.db.exec('ALTER TABLE images ADD COLUMN tags TEXT');
+    }
+
     return this;
   }
 
@@ -72,12 +102,14 @@ class SqliteAdapter extends BaseAdapter {
 
   // ── User helpers ──────────────────────────────────────────────────────────
 
-  async createUser(username, plainPassword, isAdmin = false) {
+  async createUser(username, plainPassword, isAdmin = false, profile = {}) {
     const hash = await bcrypt.hash(plainPassword, SALT_ROUNDS);
+    const email = profile.email ? String(profile.email).trim().toLowerCase() : null;
+    const realName = profile.realName ? String(profile.realName).trim() : null;
     const stmt = this.db.prepare(
-      'INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)'
+      'INSERT INTO users (username, email, real_name, password_hash, is_admin) VALUES (?, ?, ?, ?, ?)'
     );
-    const result = stmt.run(username, hash, isAdmin ? 1 : 0);
+    const result = stmt.run(username, email, realName, hash, isAdmin ? 1 : 0);
     return Number(result.lastInsertRowid);
   }
 
@@ -87,15 +119,21 @@ class SqliteAdapter extends BaseAdapter {
       .get(username);
   }
 
+  async getUserByEmail(email) {
+    return this.db
+      .prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)')
+      .get(email);
+  }
+
   async getUserById(id) {
     return this.db
-      .prepare('SELECT id, username, is_admin, created_at FROM users WHERE id = ?')
+      .prepare('SELECT id, username, email, real_name, is_admin, created_at FROM users WHERE id = ?')
       .get(id);
   }
 
   async listUsers() {
     return this.db
-      .prepare('SELECT id, username, is_admin, created_at FROM users ORDER BY created_at DESC')
+      .prepare('SELECT id, username, email, real_name, is_admin, created_at FROM users ORDER BY created_at DESC')
       .all();
   }
 
@@ -116,12 +154,12 @@ class SqliteAdapter extends BaseAdapter {
 
   // ── Image helpers ─────────────────────────────────────────────────────────
 
-  async createImage({ filename, originalName, slug, mimeType, size, userId }) {
+  async createImage({ filename, originalName, slug, mimeType, size, userId, comment = null, tags = null }) {
     const stmt = this.db.prepare(
-      `INSERT INTO images (filename, original_name, slug, mime_type, size, user_id)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO images (filename, original_name, slug, mime_type, size, comment, tags, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     );
-    const result = stmt.run(filename, originalName, slug, mimeType, size, userId);
+    const result = stmt.run(filename, originalName, slug, mimeType, size, comment, tags, userId);
     return Number(result.lastInsertRowid);
   }
 
@@ -278,22 +316,30 @@ class SqliteAdapter extends BaseAdapter {
 
       // Import users (preserving original IDs and password hashes)
       const insertUser = this.db.prepare(
-        `INSERT INTO users (id, username, password_hash, is_admin, created_at)
-         VALUES (?, ?, ?, ?, ?)`
+        `INSERT INTO users (id, username, email, real_name, password_hash, is_admin, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
       );
       for (const u of data.users) {
-        insertUser.run(u.id, u.username, u.password_hash, u.is_admin, u.created_at);
+        insertUser.run(
+          u.id,
+          u.username,
+          u.email || null,
+          u.real_name || null,
+          u.password_hash,
+          u.is_admin,
+          u.created_at
+        );
       }
 
       // Import images
       const insertImage = this.db.prepare(
-        `INSERT INTO images (id, filename, original_name, slug, mime_type, size, user_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO images (id, filename, original_name, slug, mime_type, size, comment, tags, user_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       );
       for (const img of data.images) {
         insertImage.run(
           img.id, img.filename, img.original_name, img.slug,
-          img.mime_type, img.size, img.user_id, img.created_at
+          img.mime_type, img.size, img.comment || null, img.tags || null, img.user_id, img.created_at
         );
       }
 

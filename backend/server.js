@@ -21,6 +21,14 @@ const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'imghoster.d
 const SESSION_SECRET = process.env.SESSION_SECRET || 'CHANGE_ME_IN_PRODUCTION_imghoster';
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
 
+function resolveCookieSecureSetting() {
+  const raw = process.env.COOKIE_SECURE;
+  if (raw === 'true' || raw === '1') return true;
+  if (raw === 'false' || raw === '0') return false;
+  // Default to auto so cookies are secure on HTTPS and still work on local HTTP.
+  return 'auto';
+}
+
 // Ensure uploads directory exists
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -66,7 +74,7 @@ app.use(
     name: 'imghoster.sid',
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: resolveCookieSecureSetting(),
       sameSite: 'lax',
       maxAge: 24 * 60 * 60 * 1000, // 1 day default; extended to 30d on "remember me"
     },

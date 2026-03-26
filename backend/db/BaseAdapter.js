@@ -25,13 +25,18 @@ class BaseAdapter {
    * Create a user with a hashed password.
    * @returns {number} the new user's ID
    */
-  async createUser(username, plainPassword, isAdmin = false) {
+  async createUser(username, plainPassword, isAdmin = false, profile = {}) {
     throw new Error('Not implemented: createUser');
   }
 
   /** @returns {object|undefined} full user row including password_hash */
   async getUserByUsername(username) {
     throw new Error('Not implemented: getUserByUsername');
+  }
+
+  /** @returns {object|undefined} full user row including password_hash */
+  async getUserByEmail(email) {
+    throw new Error('Not implemented: getUserByEmail');
   }
 
   /** @returns {object|undefined} user row (id, username, is_admin, created_at) */
@@ -63,7 +68,7 @@ class BaseAdapter {
   // ── Image helpers ─────────────────────────────────────────────────────────
 
   /**
-   * @param {object} data – { filename, originalName, slug, mimeType, size, userId }
+   * @param {object} data – { filename, originalName, slug, mimeType, size, userId, comment, tags }
    * @returns {number} the new image's ID
    */
   async createImage(data) {

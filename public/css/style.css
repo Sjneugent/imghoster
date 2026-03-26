@@ -258,11 +258,55 @@ tbody td { padding: .7rem .9rem; vertical-align: middle; }
 .drop-zone .dz-icon { font-size: 2.5rem; margin-bottom: .5rem; color: var(--text-muted); }
 .drop-zone .dz-label { color: var(--text-muted); font-size: .95rem; }
 .drop-zone .dz-preview { margin-top: 1rem; }
-.drop-zone .dz-preview img {
-  max-height: 200px;
-  max-width: 100%;
-  border-radius: var(--radius);
+.drop-zone .dz-preview-grid {
+  display: grid;
+  gap: .65rem;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+
+.drop-zone .dz-thumb-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
   box-shadow: var(--shadow);
+  aspect-ratio: 4 / 3;
+}
+
+.drop-zone .dz-thumb-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.drop-zone .dz-thumb-meta {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+  padding: .4rem .5rem;
+  color: #fff;
+  background: linear-gradient(to bottom, rgba(12,16,29,.78), rgba(12,16,29,.18));
+  text-shadow: 0 1px 2px rgba(0,0,0,.45);
+}
+
+.drop-zone .dz-thumb-name {
+  font-size: .74rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drop-zone .dz-thumb-size {
+  font-size: .68rem;
+  opacity: .92;
 }
 
 /* ── Copy URL badge ───────────────────────────────────────────────────────── */
@@ -305,6 +349,37 @@ tbody td { padding: .7rem .9rem; vertical-align: middle; }
 .login-card .login-logo .logo-icon { font-size: 2.8rem; }
 .login-card .login-logo h1 { font-size: 1.4rem; font-weight: 700; margin-top: .4rem; }
 .login-card .login-logo p { color: var(--text-muted); font-size: .88rem; }
+.auth-links {
+  margin-top: .9rem;
+  font-size: .86rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.captcha-row {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  margin-bottom: .55rem;
+}
+
+.captcha-image {
+  flex: 1;
+  min-height: 72px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.captcha-image svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
 
 /* ── Stat cards ───────────────────────────────────────────────────────────── */
 .stat-grid {

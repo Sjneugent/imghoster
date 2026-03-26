@@ -64,12 +64,16 @@ function getDB() {
 // interface identical to the original monolithic db.js, so callers only need
 // to add `await` — no import changes.
 
-async function createUser(username, plainPassword, isAdmin) {
-  return getAdapter().createUser(username, plainPassword, isAdmin);
+async function createUser(username, plainPassword, isAdmin, profile) {
+  return getAdapter().createUser(username, plainPassword, isAdmin, profile);
 }
 
 async function getUserByUsername(username) {
   return getAdapter().getUserByUsername(username);
+}
+
+async function getUserByEmail(email) {
+  return getAdapter().getUserByEmail(email);
 }
 
 async function getUserById(id) {
@@ -153,6 +157,7 @@ module.exports = {
   getDB,
   createUser,
   getUserByUsername,
+  getUserByEmail,
   getUserById,
   listUsers,
   deleteUser,

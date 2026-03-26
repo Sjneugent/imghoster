@@ -58,6 +58,8 @@ class PostgresAdapter extends BaseAdapter {
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         username TEXT UNIQUE NOT NULL,
+        email TEXT,
+        real_name TEXT,
         password_hash TEXT NOT NULL,
         is_admin INTEGER NOT NULL DEFAULT 0,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -70,6 +72,8 @@ class PostgresAdapter extends BaseAdapter {
         slug TEXT UNIQUE NOT NULL,
         mime_type TEXT NOT NULL,
         size INTEGER NOT NULL,
+        comment TEXT,
+        tags TEXT,
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
@@ -85,6 +89,16 @@ class PostgresAdapter extends BaseAdapter {
       CREATE INDEX IF NOT EXISTS idx_images_slug ON images(slug);
       CREATE INDEX IF NOT EXISTS idx_images_user ON images(user_id);
       CREATE INDEX IF NOT EXISTS idx_views_image ON image_views(image_id);
+    `);
+
+    await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT');
+    await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS real_name TEXT');
+    await client.query('ALTER TABLE images ADD COLUMN IF NOT EXISTS comment TEXT');
+    await client.query('ALTER TABLE images ADD COLUMN IF NOT EXISTS tags TEXT');
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique
+      ON users (LOWER(email))
+      WHERE email IS NOT NULL AND email <> ''
     `);
   }
 
@@ -106,11 +120,13 @@ class PostgresAdapter extends BaseAdapter {
 
   // ── User helpers ──────────────────────────────────────────────────────────
 
-  async createUser(username, plainPassword, isAdmin = false) {
+  async createUser(username, plainPassword, isAdmin = false, profile = {}) {
     const hash = await bcrypt.hash(plainPassword, SALT_ROUNDS);
+    const email = profile.email ? String(profile.email).trim().toLowerCase() : null;
+    const realName = profile.realName ? String(profile.realName).trim() : null;
     const row = await this._queryOne(
-      'INSERT INTO users (username, password_hash, is_admin) VALUES ($1, $2, $3) RETURNING id',
-      [username, hash, isAdmin ? 1 : 0]
+      'INSERT INTO users (username, email, real_name, password_hash, is_admin) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [username, email, realName, hash, isAdmin ? 1 : 0]
     );
     return row.id;
   }
@@ -121,15 +137,21 @@ class PostgresAdapter extends BaseAdapter {
     );
   }
 
+  async getUserByEmail(email) {
+    return this._queryOne(
+      'SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [email]
+    );
+  }
+
   async getUserById(id) {
     return this._queryOne(
-      'SELECT id, username, is_admin, created_at FROM users WHERE id = $1', [id]
+      'SELECT id, username, email, real_name, is_admin, created_at FROM users WHERE id = $1', [id]
     );
   }
 
   async listUsers() {
     return this._queryAll(
-      'SELECT id, username, is_admin, created_at FROM users ORDER BY created_at DESC'
+      'SELECT id, username, email, real_name, is_admin, created_at FROM users ORDER BY created_at DESC'
     );
   }
 
@@ -150,11 +172,11 @@ class PostgresAdapter extends BaseAdapter {
 
   // ── Image helpers ─────────────────────────────────────────────────────────
 
-  async createImage({ filename, originalName, slug, mimeType, size, userId }) {
+  async createImage({ filename, originalName, slug, mimeType, size, userId, comment = null, tags = null }) {
     const row = await this._queryOne(
-      `INSERT INTO images (filename, original_name, slug, mime_type, size, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [filename, originalName, slug, mimeType, size, userId]
+      `INSERT INTO images (filename, original_name, slug, mime_type, size, comment, tags, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [filename, originalName, slug, mimeType, size, comment, tags, userId]
     );
     return row.id;
   }
@@ -310,9 +332,9 @@ class PostgresAdapter extends BaseAdapter {
       // Import users
       for (const u of data.users) {
         await client.query(
-          `INSERT INTO users (id, username, password_hash, is_admin, created_at)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [u.id, u.username, u.password_hash, u.is_admin, u.created_at]
+          `INSERT INTO users (id, username, email, real_name, password_hash, is_admin, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [u.id, u.username, u.email || null, u.real_name || null, u.password_hash, u.is_admin, u.created_at]
         );
       }
       // Reset sequence
@@ -324,10 +346,10 @@ class PostgresAdapter extends BaseAdapter {
       // Import images
       for (const img of data.images) {
         await client.query(
-          `INSERT INTO images (id, filename, original_name, slug, mime_type, size, user_id, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          `INSERT INTO images (id, filename, original_name, slug, mime_type, size, comment, tags, user_id, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
           [img.id, img.filename, img.original_name, img.slug,
-           img.mime_type, img.size, img.user_id, img.created_at]
+           img.mime_type, img.size, img.comment || null, img.tags || null, img.user_id, img.created_at]
         );
       }
       if (data.images.length > 0) {

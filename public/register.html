@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ImgHoster - Register</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body class="page-login">
+  <div class="card login-card">
+    <div class="login-logo">
+      <div class="logo-icon">🖼️</div>
+      <h1>Create Account</h1>
+      <p>Set up your ImgHoster profile</p>
+    </div>
+
+    <div class="alert" id="alert" role="alert"></div>
+
+    <form id="register-form" novalidate>
+      <div class="form-group">
+        <label class="form-label" for="email">Email</label>
+        <input class="form-control" type="email" id="email" name="email" autocomplete="email" required />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="username">Username</label>
+        <input class="form-control" type="text" id="username" name="username" autocomplete="username" required />
+        <p class="form-hint">3-40 chars, letters/numbers/_/- only.</p>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="realName">Real Name</label>
+        <input class="form-control" type="text" id="realName" name="realName" autocomplete="name" required />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="password">Password</label>
+        <input class="form-control" type="password" id="password" name="password" autocomplete="new-password" minlength="8" required />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="captcha">Captcha</label>
+        <div class="captcha-row">
+          <div id="captcha-image" class="captcha-image" aria-label="captcha challenge"></div>
+          <button class="btn btn-ghost btn-sm" id="refresh-captcha" type="button">Refresh</button>
+        </div>
+        <input class="form-control" type="text" id="captcha" name="captcha" maxlength="6" required />
+      </div>
+
+      <button class="btn btn-primary btn-full" type="submit" id="register-btn">Create account</button>
+      <p class="auth-links">Already have an account? <a href="/login.html">Sign in</a></p>
+    </form>
+  </div>
+
+  <script src="/js/register.js"></script>
+</body>
+</html>

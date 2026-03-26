@@ -2,9 +2,83 @@
 
 const express = require('express');
 const router = express.Router();
-const { getUserByUsername, verifyPassword } = require('../db');
+const crypto = require('crypto');
+const { getUserByUsername, getUserByEmail, verifyPassword, createUser } = require('../db');
 const { isLocalhost } = require('../middleware/requireAuth');
 const logger = require('../logger');
+
+function buildCaptchaText(length = 6) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.randomBytes(length);
+  let out = '';
+  for (let i = 0; i < length; i += 1) {
+    out += chars[bytes[i] % chars.length];
+  }
+  return out;
+}
+
+function randomBetween(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function createCaptchaSvg(text) {
+  const chars = text.split('');
+  const width = 220;
+  const height = 72;
+  const colorPalette = ['#1f2937', '#334155', '#0f766e', '#1d4ed8'];
+
+  const noiseLines = Array.from({ length: 8 }).map(() => {
+    const x1 = randomBetween(0, width);
+    const y1 = randomBetween(0, height);
+    const x2 = randomBetween(0, width);
+    const y2 = randomBetween(0, height);
+    const stroke = colorPalette[randomBetween(0, colorPalette.length - 1)];
+    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-opacity="0.22" stroke-width="1.6" />`;
+  }).join('');
+
+  const dots = Array.from({ length: 18 }).map(() => {
+    const cx = randomBetween(0, width);
+    const cy = randomBetween(0, height);
+    const r = randomBetween(1, 2);
+    return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#475569" fill-opacity="0.25" />`;
+  }).join('');
+
+  const letters = chars.map((ch, i) => {
+    const x = 24 + i * 31;
+    const y = randomBetween(42, 56);
+    const rotate = randomBetween(-18, 18);
+    const color = colorPalette[randomBetween(0, colorPalette.length - 1)];
+    return `<text x="${x}" y="${y}" fill="${color}" font-size="33" font-family="monospace" font-weight="700" transform="rotate(${rotate} ${x} ${y})">${ch}</text>`;
+  }).join('');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="captcha">
+  <rect width="100%" height="100%" fill="#f8fafc"/>
+  ${noiseLines}
+  ${dots}
+  ${letters}
+</svg>`;
+}
+
+function sanitizeUsername(raw) {
+  return String(raw || '').trim();
+}
+
+function sanitizeEmail(raw) {
+  return String(raw || '').trim().toLowerCase();
+}
+
+function sanitizeRealName(raw) {
+  return String(raw || '').trim();
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function isValidUsername(username) {
+  return /^[a-zA-Z0-9_-]{3,40}$/.test(username);
+}
 
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
@@ -42,6 +116,83 @@ router.post('/login', async (req, res) => {
     });
   } catch (err) {
     logger.error('Login error', { error: err.message });
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Internal server error.' });
+    }
+  }
+});
+
+// GET /api/auth/captcha
+router.get('/captcha', (req, res) => {
+  const text = buildCaptchaText(6);
+  req.session.captchaText = text;
+  req.session.captchaExpiresAt = Date.now() + (5 * 60 * 1000);
+
+  const svg = createCaptchaSvg(text);
+  res.json({
+    svg,
+    expiresInSeconds: 300,
+  });
+});
+
+// POST /api/auth/register
+router.post('/register', async (req, res) => {
+  try {
+    const username = sanitizeUsername(req.body.username);
+    const email = sanitizeEmail(req.body.email);
+    const realName = sanitizeRealName(req.body.realName);
+    const password = String(req.body.password || '');
+    const captcha = String(req.body.captcha || '').trim().toUpperCase();
+
+    if (!username || !email || !realName || !password || !captcha) {
+      return res.status(400).json({ error: 'Email, username, real name, password, and captcha are required.' });
+    }
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: 'Please provide a valid email address.' });
+    }
+    if (!isValidUsername(username)) {
+      return res.status(400).json({ error: 'Username must be 3-40 characters and use letters, numbers, underscore, or hyphen.' });
+    }
+    if (realName.length < 2 || realName.length > 120) {
+      return res.status(400).json({ error: 'Real name must be between 2 and 120 characters.' });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    }
+
+    const captchaText = req.session ? String(req.session.captchaText || '').toUpperCase() : '';
+    const captchaExpiresAt = req.session ? Number(req.session.captchaExpiresAt || 0) : 0;
+    if (!captchaText || Date.now() > captchaExpiresAt || captcha !== captchaText) {
+      return res.status(400).json({ error: 'Invalid or expired captcha. Please try again.' });
+    }
+
+    req.session.captchaText = null;
+    req.session.captchaExpiresAt = null;
+
+    const existingUser = await getUserByUsername(username);
+    if (existingUser) {
+      return res.status(409).json({ error: 'Username already exists.' });
+    }
+    const existingEmail = await getUserByEmail(email);
+    if (existingEmail) {
+      return res.status(409).json({ error: 'Email is already in use.' });
+    }
+
+    const id = await createUser(username, password, false, { email, realName });
+    logger.info('User registered', { id, username, email });
+
+    res.status(201).json({
+      id,
+      username,
+      email,
+      realName,
+      message: 'Account created successfully. Please sign in.',
+    });
+  } catch (err) {
+    if (err.message.includes('UNIQUE') || err.message.includes('duplicate key')) {
+      return res.status(409).json({ error: 'Username or email already exists.' });
+    }
+    logger.error('Registration error', { error: err.message, stack: err.stack });
     if (!res.headersSent) {
       res.status(500).json({ error: 'Internal server error.' });
     }
