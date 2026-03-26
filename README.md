@@ -19,6 +19,7 @@ Minimal personal image hosting with a Node.js/Express backend, SQLite database a
   - [Verifying Your SSL Setup](#verifying-your-ssl-setup)
   - [Troubleshooting SSL Issues](#troubleshooting-ssl-issues)
 - [NGINX Configuration Walkthrough](#nginx-configuration-walkthrough)
+- [NGINX Shell Scripts](#nginx-shell-scripts)
 - [Localhost Auth Bypass](#localhost-auth-bypass)
 - [Logging](#logging)
 - [Directory Layout](#directory-layout)
@@ -606,6 +607,39 @@ server {
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 }
 ```
+
+---
+
+## NGINX Shell Scripts
+
+This repository includes Linux shell helpers in `scripts/nginx/` for installing
+site configs and controlling the nginx service.
+
+### 1. Install site configs (secure or insecure)
+
+```bash
+# Secure mode (default)
+bash scripts/nginx/install-sites.sh secure
+
+# Insecure HTTP-only mode
+bash scripts/nginx/install-sites.sh insecure
+```
+
+### 2. Service control helpers
+
+```bash
+bash scripts/nginx/start.sh
+bash scripts/nginx/stop.sh
+bash scripts/nginx/restart.sh
+bash scripts/nginx/reload.sh
+bash scripts/nginx/status.sh
+bash scripts/nginx/enable.sh
+bash scripts/nginx/disable.sh
+bash scripts/nginx/test-config.sh
+```
+
+`install-sites.sh` copies both nginx profiles to `/etc/nginx/sites-available/`
+and enables one mode on demand in `/etc/nginx/sites-enabled/`.
 
 ---
 
