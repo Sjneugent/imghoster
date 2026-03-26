@@ -128,6 +128,37 @@ describe('Database helpers', () => {
     assert.ok(db.verifyPassword('NewPass999!', user.password_hash));
     assert.equal(db.verifyPassword('Password1!', user.password_hash), false);
   });
+
+  test('searchImages – finds by slug', () => {
+    const userId = db.getUserByUsername('testuser').id;
+    const results = db.searchImages('my-photo', userId, false);
+    assert.ok(results.length >= 1, 'should find at least one result');
+    assert.ok(results.some(r => r.slug === 'my-photo'));
+  });
+
+  test('searchImages – admin searches all users', () => {
+    const results = db.searchImages('my-photo', null, true);
+    assert.ok(results.length >= 1, 'admin should find results across all users');
+    assert.ok(results[0].username, 'admin search should include username');
+  });
+
+  test('searchImages – no results for non-matching query', () => {
+    const userId = db.getUserByUsername('testuser').id;
+    const results = db.searchImages('zzz-nonexistent-zzz', userId, false);
+    assert.equal(results.length, 0);
+  });
+
+  test('getImagesByIds – returns matching images', () => {
+    const img = db.getImageBySlug('my-photo');
+    const results = db.getImagesByIds([img.id]);
+    assert.equal(results.length, 1);
+    assert.equal(results[0].slug, 'my-photo');
+  });
+
+  test('getImagesByIds – returns empty for no IDs', () => {
+    const results = db.getImagesByIds([]);
+    assert.equal(results.length, 0);
+  });
 });
 
 // ── HTTP integration tests ────────────────────────────────────────────────────
@@ -337,6 +368,52 @@ describe('HTTP API', () => {
     assert.equal(r.status, 200);
     assert.ok(Array.isArray(r.body));
     assert.ok(r.body.length >= 1, 'should contain at least the uploaded image');
+  });
+
+  test('GET /api/images?q=slug – search returns matching images', async () => {
+    // Get the slug of the uploaded image to search for it
+    const listR = await request('GET', '/api/images');
+    const slug = listR.body[0].slug;
+    const partial = slug.substring(0, 8); // first 8 chars of UUID
+
+    const r = await request('GET', `/api/images?q=${partial}`);
+    assert.equal(r.status, 200);
+    assert.ok(Array.isArray(r.body));
+    assert.ok(r.body.length >= 1, 'should find the image by partial slug');
+  });
+
+  test('GET /api/images?q=nonexistent – search returns empty', async () => {
+    const r = await request('GET', '/api/images?q=zzz-definitely-not-a-slug-zzz');
+    assert.equal(r.status, 200);
+    assert.ok(Array.isArray(r.body));
+    assert.equal(r.body.length, 0, 'should return empty for non-matching query');
+  });
+
+  test('POST /api/images/download – downloads zip of selected images', async () => {
+    const listR = await request('GET', '/api/images');
+    assert.ok(listR.body.length >= 1);
+    const imageId = listR.body[0].id;
+
+    const r = await request('POST', '/api/images/download', {
+      body: { ids: [imageId] },
+    });
+    assert.equal(r.status, 200, `Expected 200 but got ${r.status}: ${JSON.stringify(r.body)}`);
+  });
+
+  test('POST /api/images/download – empty ids returns 400', async () => {
+    const r = await request('POST', '/api/images/download', {
+      body: { ids: [] },
+    });
+    assert.equal(r.status, 400);
+    assert.ok(r.body.error);
+  });
+
+  test('POST /api/images/download – invalid ids returns 400', async () => {
+    const r = await request('POST', '/api/images/download', {
+      body: { ids: ['abc', -1] },
+    });
+    assert.equal(r.status, 400);
+    assert.ok(r.body.error);
   });
 
   test('GET /i/:slug – serving uploaded image returns 200', async () => {

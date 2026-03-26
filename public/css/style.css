@@ -343,6 +343,36 @@ tbody td { padding: .7rem .9rem; vertical-align: middle; }
 }
 .empty-state .empty-icon { font-size: 3rem; margin-bottom: .75rem; }
 
+/* ── Search bar ──────────────────────────────────────────────────────────── */
+.search-bar { position: relative; }
+.search-bar .form-control {
+  padding-left: .9rem;
+  font-size: .92rem;
+}
+
+/* ── Bulk toolbar ────────────────────────────────────────────────────────── */
+.bulk-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: .65rem 1rem;
+  margin-bottom: .75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  flex-wrap: wrap;
+}
+
+/* ── Image checkbox in table ─────────────────────────────────────────────── */
+.img-checkbox,
+thead th input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 /* ── Spinner ──────────────────────────────────────────────────────────────── */
 .spinner {
   display: inline-block;

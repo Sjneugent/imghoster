@@ -164,6 +164,41 @@ function slugExists(slug) {
   return !!row;
 }
 
+function searchImages(query, userId, isAdmin) {
+  const pattern = `%${query}%`;
+  if (isAdmin) {
+    return getDB()
+      .prepare(
+        `SELECT i.*, u.username, COUNT(v.id) AS view_count
+         FROM images i
+         JOIN users u ON u.id = i.user_id
+         LEFT JOIN image_views v ON v.image_id = i.id
+         WHERE i.slug LIKE ? OR i.original_name LIKE ? OR u.username LIKE ?
+         GROUP BY i.id
+         ORDER BY i.created_at DESC`
+      )
+      .all(pattern, pattern, pattern);
+  }
+  return getDB()
+    .prepare(
+      `SELECT i.*, COUNT(v.id) AS view_count
+       FROM images i
+       LEFT JOIN image_views v ON v.image_id = i.id
+       WHERE i.user_id = ? AND (i.slug LIKE ? OR i.original_name LIKE ?)
+       GROUP BY i.id
+       ORDER BY i.created_at DESC`
+    )
+    .all(userId, pattern, pattern);
+}
+
+function getImagesByIds(ids) {
+  if (!ids.length) return [];
+  const placeholders = ids.map(() => '?').join(',');
+  return getDB()
+    .prepare(`SELECT * FROM images WHERE id IN (${placeholders})`)
+    .all(...ids);
+}
+
 // ── View / stats helpers ──────────────────────────────────────────────────────
 
 function recordView(imageId, ipAddress, referrer) {
@@ -236,6 +271,8 @@ module.exports = {
   listAllImages,
   deleteImage,
   slugExists,
+  searchImages,
+  getImagesByIds,
   recordView,
   getImageStats,
   getViewsOverTime,

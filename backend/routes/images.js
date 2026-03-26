@@ -6,6 +6,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
+const archiver = require('archiver');
 const {
   createImage,
   getImageById,
@@ -13,6 +14,8 @@ const {
   listAllImages,
   deleteImage,
   slugExists,
+  searchImages,
+  getImagesByIds,
   listUsers,
 } = require('../db');
 const { requireAuth, isLocalhost } = require('../middleware/requireAuth');
@@ -129,12 +132,25 @@ router.post('/upload', requireAuth, upload.single('image'), (req, res) => {
 // ── List ──────────────────────────────────────────────────────────────────────
 // GET /api/images          – own images
 // GET /api/images?all=1    – all images (admin only)
+// GET /api/images?q=term   – search images
 router.get('/', requireAuth, (req, res) => {
   try {
+    const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const showAll = req.query.all === '1';
+
+    if (query) {
+      const isAdmin = showAll && (req.session.isAdmin || isLocalhost(req));
+      const userId = isAdmin ? null : (req.session.userId || null);
+      if (isLocalhost(req) && !req.session.userId) {
+        return res.json(searchImages(query, null, true));
+      }
+      return res.json(searchImages(query, userId, isAdmin));
+    }
+
     if (isLocalhost(req) && !req.session.userId) {
       return res.json(listAllImages());
     }
-    if (req.query.all === '1' && (req.session.isAdmin || isLocalhost(req))) {
+    if (showAll && (req.session.isAdmin || isLocalhost(req))) {
       return res.json(listAllImages());
     }
     res.json(listImagesByUser(req.session.userId));
@@ -142,6 +158,86 @@ router.get('/', requireAuth, (req, res) => {
     logger.error('Failed to list images', { error: err.message });
     if (!res.headersSent) {
       res.status(500).json({ error: 'Failed to retrieve images.' });
+    }
+  }
+});
+
+// ── Bulk download as zip ──────────────────────────────────────────────────────
+// POST /api/images/download   body: { ids: [1, 2, 3] }
+router.post('/download', requireAuth, (req, res) => {
+  try {
+    const ids = req.body.ids;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Provide an array of image IDs.' });
+    }
+
+    // Sanitise: only accept positive integers
+    const safeIds = ids
+      .map(id => Number(id))
+      .filter(id => Number.isInteger(id) && id > 0);
+
+    if (safeIds.length === 0) {
+      return res.status(400).json({ error: 'No valid image IDs provided.' });
+    }
+
+    const images = getImagesByIds(safeIds);
+    if (images.length === 0) {
+      return res.status(404).json({ error: 'No images found.' });
+    }
+
+    // Authorization: non-admin users can only download their own images
+    if (!isLocalhost(req) && !req.session.isAdmin) {
+      const unauthorized = images.find(img => img.user_id !== req.session.userId);
+      if (unauthorized) {
+        return res.status(403).json({ error: 'Forbidden: you can only download your own images.' });
+      }
+    }
+
+    // Verify all files exist on disk before streaming
+    const missing = images.filter(img => !fs.existsSync(path.join(UPLOADS_DIR, img.filename)));
+    if (missing.length > 0) {
+      logger.warn('Download requested for missing files', { missing: missing.map(m => m.filename) });
+    }
+
+    const available = images.filter(img => fs.existsSync(path.join(UPLOADS_DIR, img.filename)));
+    if (available.length === 0) {
+      return res.status(404).json({ error: 'No image files available on disk.' });
+    }
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="images.zip"');
+
+    const archive = archiver('zip', { zlib: { level: 5 } });
+
+    archive.on('error', (err) => {
+      logger.error('Archive error', { error: err.message });
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to create zip archive.' });
+      }
+    });
+
+    archive.pipe(res);
+
+    // Use slug + original extension as the filename inside the zip
+    const usedNames = new Set();
+    for (const img of available) {
+      const ext = path.extname(img.filename);
+      let name = img.slug + ext;
+      // Deduplicate in case of collisions
+      if (usedNames.has(name)) {
+        name = `${img.slug}_${img.id}${ext}`;
+      }
+      usedNames.add(name);
+      archive.file(path.join(UPLOADS_DIR, img.filename), { name });
+    }
+
+    archive.finalize();
+
+    logger.info('Bulk download', { count: available.length, ids: safeIds });
+  } catch (err) {
+    logger.error('Download failed', { error: err.message, stack: err.stack });
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Download failed.' });
     }
   }
 });

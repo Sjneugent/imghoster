@@ -34,13 +34,27 @@
         <a class="btn btn-primary btn-sm" href="upload.html">⬆️ Upload new</a>
       </div>
 
+      <div class="search-bar" style="margin-bottom:1rem">
+        <input type="text" id="search-input" class="form-control" placeholder="🔍 Search images by slug, filename, or user…" autocomplete="off" />
+      </div>
+
       <div class="alert" id="alert" role="alert"></div>
+
+      <div id="bulk-toolbar" class="bulk-toolbar" style="display:none">
+        <label class="checkbox-row" style="font-size:.88rem;font-weight:600">
+          <input type="checkbox" id="select-all" /> Select all
+        </label>
+        <span id="selection-count" style="font-size:.85rem;color:var(--text-muted)"></span>
+        <span style="flex:1"></span>
+        <button class="btn btn-primary btn-sm" id="btn-download" disabled>📦 Download selected as ZIP</button>
+      </div>
 
       <div class="card" style="padding:0">
         <div class="table-wrap">
           <table id="images-table">
             <thead>
               <tr>
+                <th style="width:36px"><input type="checkbox" id="select-all-head" title="Select all" /></th>
                 <th>Preview</th>
                 <th>Slug / URL</th>
                 <th id="col-user" style="display:none">User</th>
@@ -51,7 +65,7 @@
               </tr>
             </thead>
             <tbody id="images-tbody">
-              <tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted)">Loading…</td></tr>
+              <tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-muted)">Loading…</td></tr>
             </tbody>
           </table>
         </div>
