@@ -18,5 +18,8 @@
     "db:export": "cd backend && npm run db:export",
     "db:import": "cd backend && npm run db:import",
     "db:replicate": "cd backend && npm run db:replicate"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1"
   }
 }
