@@ -10,10 +10,17 @@ import {
   createApiToken,
   listApiTokensByUser,
   revokeApiToken,
+  saveTotpSecret,
+  enableTotp,
+  disableTotp,
+  getTotpSecret,
+  isTotpEnabled,
 } from '../db/index.js';
 import { isLocalhost, requireAuth } from '../middleware/requireAuth.js';
 import { hashToken } from '../middleware/apiToken.js';
 import logger from '../logger.js';
+import * as OTPAuth from 'otpauth';
+import QRCode from 'qrcode';
 
 function buildCaptchaText(length = 6) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -105,6 +112,32 @@ router.post('/login', async (req, res) => {
     if (!user || !(await verifyPassword(password, user.password_hash))) {
       logger.warn('Failed login attempt', { username, ip: req.ip });
       return res.status(401).json({ error: 'Invalid username or password.' });
+    }
+
+    // ── TOTP 2FA check ───────────────────────────────────────────────────────
+    const totpEnabled = await isTotpEnabled(user.id);
+    if (totpEnabled) {
+      const { totpCode } = req.body;
+      if (!totpCode) {
+        // Tell the frontend to prompt for a TOTP code
+        return res.status(206).json({ requiresTotp: true, message: 'Please provide your 2FA code.' });
+      }
+      const secretRow = await getTotpSecret(user.id);
+      if (!secretRow) {
+        return res.status(500).json({ error: 'TOTP misconfigured. Contact admin.' });
+      }
+      const totp = new OTPAuth.TOTP({
+        issuer: 'ImgHoster',
+        label: user.username,
+        algorithm: 'SHA1',
+        digits: 6,
+        period: 30,
+        secret: OTPAuth.Secret.fromBase32(secretRow.secret),
+      });
+      const delta = totp.validate({ token: String(totpCode).trim(), window: 1 });
+      if (delta === null) {
+        return res.status(401).json({ error: 'Invalid 2FA code.' });
+      }
     }
 
     req.session.regenerate((regenErr) => {
@@ -330,6 +363,110 @@ router.get('/me', (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ error: 'Internal server error.' });
     }
+  }
+});
+
+// ── TOTP 2FA Setup ────────────────────────────────────────────────────────────
+// POST /api/auth/totp/setup  – generate secret + QR code
+router.post('/totp/setup', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const already = await isTotpEnabled(userId);
+    if (already) {
+      return res.status(400).json({ error: '2FA is already enabled.' });
+    }
+
+    const secret = new OTPAuth.Secret({ size: 20 });
+    const totp = new OTPAuth.TOTP({
+      issuer: 'ImgHoster',
+      label: req.session.username,
+      algorithm: 'SHA1',
+      digits: 6,
+      period: 30,
+      secret,
+    });
+
+    await saveTotpSecret(userId, secret.base32);
+    const uri = totp.toString();
+    const qrDataUrl = await QRCode.toDataURL(uri);
+
+    res.json({ secret: secret.base32, qrDataUrl, uri });
+  } catch (err) {
+    logger.error('TOTP setup error', { error: err.message });
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to set up 2FA.' });
+  }
+});
+
+// POST /api/auth/totp/enable  – verify code and enable
+router.post('/totp/enable', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const secretRow = await getTotpSecret(userId);
+    if (!secretRow) {
+      return res.status(400).json({ error: 'Run TOTP setup first.' });
+    }
+    if (secretRow.enabled) {
+      return res.status(400).json({ error: '2FA is already enabled.' });
+    }
+
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: 'Verification code is required.' });
+
+    const totp = new OTPAuth.TOTP({
+      issuer: 'ImgHoster',
+      label: req.session.username,
+      algorithm: 'SHA1',
+      digits: 6,
+      period: 30,
+      secret: OTPAuth.Secret.fromBase32(secretRow.secret),
+    });
+
+    const delta = totp.validate({ token: String(code).trim(), window: 1 });
+    if (delta === null) {
+      return res.status(401).json({ error: 'Invalid verification code.' });
+    }
+
+    await enableTotp(userId);
+    res.json({ message: '2FA enabled successfully.' });
+  } catch (err) {
+    logger.error('TOTP enable error', { error: err.message });
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to enable 2FA.' });
+  }
+});
+
+// POST /api/auth/totp/disable  – disable 2FA (requires password)
+router.post('/totp/disable', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const enabled = await isTotpEnabled(userId);
+    if (!enabled) {
+      return res.status(400).json({ error: '2FA is not enabled.' });
+    }
+
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: 'Password is required to disable 2FA.' });
+
+    const user = await getUserByUsername(req.session.username);
+    if (!user || !(await verifyPassword(password, user.password_hash))) {
+      return res.status(401).json({ error: 'Invalid password.' });
+    }
+
+    await disableTotp(userId);
+    res.json({ message: '2FA disabled.' });
+  } catch (err) {
+    logger.error('TOTP disable error', { error: err.message });
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to disable 2FA.' });
+  }
+});
+
+// GET /api/auth/totp/status  – check if 2FA is enabled
+router.get('/totp/status', requireAuth, async (req, res) => {
+  try {
+    const enabled = await isTotpEnabled(req.session.userId);
+    res.json({ enabled });
+  } catch (err) {
+    logger.error('TOTP status error', { error: err.message });
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to check 2FA status.' });
   }
 });
 

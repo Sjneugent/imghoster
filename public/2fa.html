@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ImgHoster – Two-Factor Authentication</title>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="navbar">
+      <a class="brand" href="/upload.html">ImgHoster</a>
+      <span class="spacer"></span>
+      <span class="user-info" id="nav-user"></span>
+      <button class="btn-logout" id="btn-logout" type="button">Log out</button>
+    </nav>
+
+    <aside class="sidebar">
+      <nav>
+        <a href="upload.html"><span class="nav-icon"></span> Upload</a>
+        <a href="list.html"><span class="nav-icon"></span> My Images</a>
+        <a href="albums.html"><span class="nav-icon"></span> Albums</a>
+        <a href="stats.html"><span class="nav-icon"></span> Statistics</a>
+        <a href="token.html"><span class="nav-icon"></span> API Token</a>
+        <a href="2fa.html"><span class="nav-icon"></span> 2FA</a>
+        <a href="dashboard.html" data-admin-only><span class="nav-icon"></span> Dashboard</a>
+      </nav>
+    </aside>
+
+    <main class="main-content">
+      <h1 class="page-title">Two-Factor Authentication</h1>
+
+      <div class="alert" id="alert" role="alert"></div>
+
+      <!-- Status section -->
+      <div class="card" id="totp-status" style="max-width:520px">
+        <p>Loading 2FA status...</p>
+      </div>
+
+      <!-- Setup section (hidden by default) -->
+      <div class="card" id="totp-setup" style="display:none;max-width:520px;margin-top:1rem">
+        <h3 style="margin-top:0">Set Up 2FA</h3>
+        <p>Scan this QR code with your authenticator app (Google Authenticator, Authy, etc):</p>
+        <div id="qr-container" style="text-align:center;margin:1rem 0"></div>
+        <p style="font-size:.85rem;color:var(--text-muted)">Or enter this secret manually: <code id="totp-secret"></code></p>
+        <div class="form-group">
+          <label class="form-label" for="verify-code">Verification Code</label>
+          <input class="form-control" type="text" id="verify-code" maxlength="6" pattern="[0-9]{6}"
+                 placeholder="Enter 6-digit code" autocomplete="one-time-code" />
+        </div>
+        <button class="btn btn-primary" id="btn-verify">Verify & Enable</button>
+      </div>
+
+      <!-- Disable section (hidden by default) -->
+      <div class="card" id="totp-disable" style="display:none;max-width:520px;margin-top:1rem">
+        <h3 style="margin-top:0">Disable 2FA</h3>
+        <p>Enter your password to disable two-factor authentication.</p>
+        <div class="form-group">
+          <label class="form-label" for="disable-password">Password</label>
+          <input class="form-control" type="password" id="disable-password" />
+        </div>
+        <button class="btn btn-danger" id="btn-disable">Disable 2FA</button>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script src="/js/2fa.js"></script>
+</body>
+</html>

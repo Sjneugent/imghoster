@@ -45,7 +45,7 @@ async function showStatus() {
 
   const totalViews = stats.reduce((sum, s) => sum + (s.view_count || 0), 0);
 
-  console.log('📊 Database status');
+  console.log('Database status');
   console.log(`   Type:    ${DB_TYPE}`);
   console.log(`   Config:  ${DB_TYPE === 'sqlite' ? DB_PATH : '(connection string)'}`);
   console.log(`   Users:   ${users.length}`);
@@ -68,7 +68,7 @@ async function reinit() {
 
   console.log(`Initialising ${DB_TYPE} database...`);
   await initDB(config);
-  console.log('✅ Database schema is up-to-date.');
+  console.log('Database schema is up-to-date.');
 }
 
 (async () => {
@@ -98,7 +98,7 @@ async function reinit() {
 
     process.exit(0);
   } catch (err) {
-    console.error('❌ Operation failed:', err.message);
+    console.error('Operation failed:', err.message);
     process.exit(1);
   }
 })();

@@ -285,8 +285,8 @@
       </div>
 
       <div class="actions">
-        <a id="view-link" class="btn btn-primary" target="_blank">🔗 Open Image</a>
-        <button class="btn btn-secondary" id="btn-report">⚠️ Report Content</button>
+        <a id="view-link" class="btn btn-primary" target="_blank">Open Image</a>
+        <button class="btn btn-secondary" id="btn-report">Report Content</button>
       </div>
     </div>
   </div>
@@ -353,7 +353,7 @@
 
       <div id="form-loading" class="loading">
         <div style="text-align: center; padding: 2rem;">
-          <p>📤 Submitting your report…</p>
+          <p>Submitting your report...</p>
         </div>
       </div>
     </div>
@@ -499,7 +499,7 @@
         }
 
         formLoading.style.display = 'none';
-        reportAlert.innerHTML = `<div class="alert success">✅ Thank you! Your report has been submitted. Our team will review it as soon as possible.</div>`;
+        reportAlert.innerHTML = `<div class="alert success">Thank you. Your report has been submitted. Our team will review it as soon as possible.</div>`;
 
         setTimeout(() => {
           modal.classList.remove('show');

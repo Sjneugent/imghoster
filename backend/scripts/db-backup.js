@@ -48,7 +48,7 @@ const DB_TYPE = (process.env.DB_TYPE || 'sqlite').toLowerCase();
       const rawDb = adapter.getRawDB();
       rawDb.backup(outPath);
 
-      console.log(`✅ SQLite backup saved to: ${outPath}`);
+      console.log(`SQLite backup saved to: ${outPath}`);
       console.log(`   Size: ${(fs.statSync(outPath).size / 1024).toFixed(1)} KB`);
     } else {
       // For non-SQLite databases, export data as JSON
@@ -66,7 +66,7 @@ const DB_TYPE = (process.env.DB_TYPE || 'sqlite').toLowerCase();
       const data = await exportData();
       fs.writeFileSync(outPath, JSON.stringify(data, null, 2));
 
-      console.log(`✅ Database export saved to: ${outPath}`);
+      console.log(`Database export saved to: ${outPath}`);
       console.log(`   Users: ${data.users.length}`);
       console.log(`   Images: ${data.images.length}`);
       console.log(`   Views: ${data.image_views.length}`);
@@ -74,7 +74,7 @@ const DB_TYPE = (process.env.DB_TYPE || 'sqlite').toLowerCase();
 
     process.exit(0);
   } catch (err) {
-    console.error('❌ Backup failed:', err.message);
+    console.error('Backup failed:', err.message);
     process.exit(1);
   }
 })();

@@ -10,7 +10,7 @@
 <body>
   <div class="app-shell">
     <nav class="navbar">
-      <a class="brand" href="/upload.html">🖼️ ImgHoster</a>
+      <a class="brand" href="/upload.html">ImgHoster</a>
       <span class="spacer"></span>
       <span class="user-info" id="nav-user"></span>
       <button class="btn-logout" id="btn-logout" type="button">Log out</button>
@@ -18,11 +18,13 @@
 
     <aside class="sidebar">
       <nav>
-        <a href="upload.html"><span class="nav-icon">⬆️</span> Upload</a>
-        <a href="list.html"><span class="nav-icon">🗂️</span> My Images</a>
-        <a href="stats.html"><span class="nav-icon">📊</span> Statistics</a>
-        <a href="token.html"><span class="nav-icon">🔐</span> API Token</a>
-        <a href="dashboard.html" data-admin-only><span class="nav-icon">⚙️</span> Dashboard</a>
+        <a href="upload.html"><span class="nav-icon"></span> Upload</a>
+        <a href="list.html"><span class="nav-icon"></span> My Images</a>
+        <a href="albums.html"><span class="nav-icon"></span> Albums</a>
+        <a href="stats.html"><span class="nav-icon"></span> Statistics</a>
+        <a href="token.html"><span class="nav-icon"></span> API Token</a>
+        <a href="2fa.html"><span class="nav-icon"></span> 2FA</a>
+        <a href="dashboard.html" data-admin-only><span class="nav-icon"></span> Dashboard</a>
       </nav>
     </aside>
 
@@ -33,11 +35,11 @@
         <label id="show-all-label" style="display:none;align-items:center;gap:.4rem;font-size:.88rem">
           <input type="checkbox" id="show-all" /> Show all users
         </label>
-        <a class="btn btn-primary btn-sm" href="upload.html">⬆️ Upload new</a>
+        <a class="btn btn-primary btn-sm" href="upload.html">Upload new</a>
       </div>
 
       <div class="search-bar" style="margin-bottom:1rem">
-        <input type="text" id="search-input" class="form-control" placeholder="🔍 Search images by slug, filename, or user…" autocomplete="off" />
+        <input type="text" id="search-input" class="form-control" placeholder="Search images by slug, filename, or user..." autocomplete="off" />
       </div>
 
       <div class="alert" id="alert" role="alert"></div>
@@ -48,8 +50,8 @@
         </label>
         <span id="selection-count" style="font-size:.85rem;color:var(--text-muted)"></span>
         <span style="flex:1"></span>
-        <button class="btn btn-primary btn-sm" id="btn-download" disabled>📦 Download selected as ZIP</button>
-        <button class="btn btn-danger btn-sm" id="btn-delete-selected" disabled>🗑 Delete selected</button>
+        <button class="btn btn-primary btn-sm" id="btn-download" disabled>Download selected as ZIP</button>
+        <button class="btn btn-danger btn-sm" id="btn-delete-selected" disabled>Delete selected</button>
       </div>
 
       <div class="card" style="padding:0">

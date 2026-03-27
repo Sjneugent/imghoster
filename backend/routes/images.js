@@ -17,8 +17,15 @@ import {
   slugExists,
   searchImages,
   getImagesByIds,
+  getImageBlobByImageId,
   checkDuplicateHash,
+  upsertImageBlob,
   listUsers,
+  upsertImageThumbnail,
+  getUserStorageUsed,
+  getUserStorageQuota,
+  updateImageVisibility,
+  updateImageExpiration,
 } from '../db/index.js';
 import { requireAuth, isLocalhost } from '../middleware/requireAuth.js';
 import logger from '../logger.js';
@@ -27,28 +34,116 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', '..', 'uploads');
+const STORAGE_MODE = (process.env.IMAGE_STORAGE_MODE || 'file').toLowerCase();
+const USE_DB_BLOBS = STORAGE_MODE === 'blob' || STORAGE_MODE === 'dbblob';
+const MAX_FILE_SIZE_BYTES = Number(process.env.MAX_UPLOAD_FILE_SIZE_BYTES || 10 * 1024 * 1024);
 const ALLOWED_MIME = new Set([
   'image/jpeg',
   'image/png',
   'image/gif',
   'image/webp',
+  'image/svg+xml',
 ]);
 const COMPRESSIBLE_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
-// multer storage – keep original extension, use uuid for filename
-const storage = multer.diskStorage({
-  destination(_req, _file, cb) {
-    cb(null, UPLOADS_DIR);
-  },
-  filename(_req, file, cb) {
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `${uuidv4()}${ext}`);
-  },
-});
+function extensionFromMime(mimeType) {
+  switch (mimeType) {
+    case 'image/jpeg': return '.jpg';
+    case 'image/png': return '.png';
+    case 'image/gif': return '.gif';
+    case 'image/webp': return '.webp';
+    case 'image/svg+xml': return '.svg';
+    default: return '.bin';
+  }
+}
+
+async function validateUploadedImage(file) {
+  const expectedByMime = {
+    'image/jpeg': 'jpeg',
+    'image/png': 'png',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+    'image/svg+xml': 'svg',
+  };
+
+  const expected = expectedByMime[file.mimetype];
+  if (!expected) {
+    throw new Error('Unsupported image MIME type.');
+  }
+
+  const bytes = await getUploadedFileBytes(file);
+
+  if (file.mimetype === 'image/jpeg') {
+    if (bytes.length < 4 || bytes[0] !== 0xFF || bytes[1] !== 0xD8 || bytes[bytes.length - 2] !== 0xFF || bytes[bytes.length - 1] !== 0xD9) {
+      throw new Error('Invalid JPEG file header/footer.');
+    }
+  } else if (file.mimetype === 'image/png') {
+    const pngSig = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    if (bytes.length < 8 || !pngSig.every((b, i) => bytes[i] === b)) {
+      throw new Error('Invalid PNG file signature.');
+    }
+  } else if (file.mimetype === 'image/gif') {
+    const sig = bytes.subarray(0, 6).toString('ascii');
+    if (sig !== 'GIF87a' && sig !== 'GIF89a') {
+      throw new Error('Invalid GIF file signature.');
+    }
+  } else if (file.mimetype === 'image/webp') {
+    const riff = bytes.subarray(0, 4).toString('ascii');
+    const webp = bytes.subarray(8, 12).toString('ascii');
+    if (bytes.length < 12 || riff !== 'RIFF' || webp !== 'WEBP') {
+      throw new Error('Invalid WebP file signature.');
+    }
+  } else if (file.mimetype === 'image/svg+xml') {
+    const text = bytes.toString('utf8').trim();
+    if (!text.startsWith('<') || !/<svg(?:\s|>)/i.test(text)) {
+      throw new Error('Invalid SVG root element.');
+    }
+  }
+
+  let metadata;
+  try {
+    metadata = await sharp(bytes, { animated: true }).metadata();
+  } catch (_err) {
+    throw new Error('Corrupt or unreadable image data.');
+  }
+
+  if (!metadata?.format) {
+    throw new Error('Unable to detect image format.');
+  }
+
+  if (metadata.format !== expected) {
+    throw new Error(`File content does not match declared type (${expected.toUpperCase()}).`);
+  }
+}
+
+async function getUploadedFileBytes(file) {
+  if (Buffer.isBuffer(file.buffer)) {
+    return file.buffer;
+  }
+  return fs.promises.readFile(file.path);
+}
+
+async function cleanupUploadedFile(file) {
+  if (file?.path) {
+    await fs.promises.unlink(file.path).catch(() => {});
+  }
+}
+
+const storage = USE_DB_BLOBS
+  ? multer.memoryStorage()
+  : multer.diskStorage({
+      destination(_req, _file, cb) {
+        cb(null, UPLOADS_DIR);
+      },
+      filename(_req, file, cb) {
+        const ext = path.extname(file.originalname).toLowerCase();
+        cb(null, `${uuidv4()}${ext}`);
+      },
+    });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 20 * 1024 * 1024, files: 5 }, // 20 MB each, max 5 files
+  limits: { fileSize: MAX_FILE_SIZE_BYTES, files: 5 }, // 10 MB each by default, max 5 files
   fileFilter(_req, file, cb) {
     if (ALLOWED_MIME.has(file.mimetype)) {
       cb(null, true);
@@ -101,7 +196,8 @@ async function compressUploadedImage(file) {
     return { applied: false, originalSize, finalSize: originalSize, mimeType };
   }
 
-  let pipeline = sharp(file.path, { animated: true });
+  const input = Buffer.isBuffer(file.buffer) ? file.buffer : file.path;
+  let pipeline = sharp(input, { animated: true });
   if (mimeType === 'image/jpeg') {
     pipeline = pipeline.jpeg({ quality: 78, mozjpeg: true });
   } else if (mimeType === 'image/png') {
@@ -115,13 +211,67 @@ async function compressUploadedImage(file) {
     return { applied: false, originalSize, finalSize: originalSize, mimeType };
   }
 
-  await fs.promises.writeFile(file.path, compressedBuffer);
+  if (Buffer.isBuffer(file.buffer)) {
+    file.buffer = compressedBuffer;
+    file.size = compressedBuffer.length;
+  } else {
+    await fs.promises.writeFile(file.path, compressedBuffer);
+  }
   return {
     applied: true,
     originalSize,
     finalSize: compressedBuffer.length,
     mimeType,
   };
+}
+
+// Strip EXIF / metadata from raster images (JPEG, PNG, WebP)
+async function stripExifData(file) {
+  if (!COMPRESSIBLE_MIME.has(file.mimetype)) return;
+  const input = Buffer.isBuffer(file.buffer) ? file.buffer : file.path;
+  const stripped = await sharp(input, { animated: true })
+    .rotate() // auto-rotate based on EXIF orientation before removing it
+    .withMetadata({ orientation: undefined })
+    .toBuffer();
+  if (Buffer.isBuffer(file.buffer)) {
+    file.buffer = stripped;
+    file.size = stripped.length;
+  } else {
+    await fs.promises.writeFile(file.path, stripped);
+    file.size = stripped.length;
+  }
+}
+
+const THUMB_WIDTH = 300;
+const THUMB_HEIGHT = 300;
+
+// Generate a thumbnail buffer from uploaded bytes
+async function generateThumbnail(bytes, mimeType) {
+  if (mimeType === 'image/svg+xml' || mimeType === 'image/gif') return null;
+  try {
+    const thumb = await sharp(bytes)
+      .resize(THUMB_WIDTH, THUMB_HEIGHT, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 60 })
+      .toBuffer();
+    const meta = await sharp(thumb).metadata();
+    return { data: thumb, width: meta.width, height: meta.height };
+  } catch {
+    return null;
+  }
+}
+
+const VALID_VISIBILITY = new Set(['public', 'unlisted', 'private']);
+
+function sanitizeVisibility(raw) {
+  const val = String(raw || 'public').trim().toLowerCase();
+  return VALID_VISIBILITY.has(val) ? val : 'public';
+}
+
+function parseExpiresAt(raw) {
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (isNaN(d.getTime()) || d <= new Date()) return null;
+  return d.toISOString();
 }
 
 // Return a fallback user ID for unauthenticated localhost requests
@@ -177,9 +327,20 @@ router.post('/upload', requireAuth, upload.array('image', 5), async (req, res) =
       return res.status(400).json({ error: 'No image files provided.' });
     }
 
+    for (const file of files) {
+      try {
+        await validateUploadedImage(file);
+      } catch (validationErr) {
+        await Promise.all(files.map((f) => cleanupUploadedFile(f)));
+        return res.status(400).json({
+          error: `Invalid image file "${file.originalname}": ${validationErr.message}`,
+        });
+      }
+    }
+
     const customSlug = req.body.slug ? sanitiseSlug(req.body.slug) : '';
     if (customSlug && files.length > 1) {
-      files.forEach((f) => fs.unlink(f.path, () => {}));
+      await Promise.all(files.map((f) => cleanupUploadedFile(f)));
       return res.status(400).json({ error: 'Custom slug can only be used when uploading a single image.' });
     }
 
@@ -188,11 +349,13 @@ router.post('/upload', requireAuth, upload.array('image', 5), async (req, res) =
       const file = files[i];
       let slug = customSlug;
       if (!slug) {
-        slug = path.basename(file.filename, path.extname(file.filename));
+        slug = file.filename
+          ? path.basename(file.filename, path.extname(file.filename))
+          : uuidv4();
       }
 
       if (await slugExists(slug)) {
-        files.forEach((f) => fs.unlink(f.path, () => {}));
+        await Promise.all(files.map((f) => cleanupUploadedFile(f)));
         return res.status(409).json({ error: `The URL slug "${slug}" is already taken.` });
       }
 
@@ -203,12 +366,29 @@ router.post('/upload', requireAuth, upload.array('image', 5), async (req, res) =
     const comment = sanitizeComment(req.body.comment);
     const tags = sanitizeTags(req.body.tags);
     const fileHash = req.body.fileHash || null;
+    const visibility = sanitizeVisibility(req.body.visibility);
+    const expiresAt = parseExpiresAt(req.body.expiresAt);
 
     const userId = req.session.userId || (isLocalhost(req) ? await getLocalhostFallbackUserId() : null);
     if (!userId) {
-      files.forEach((f) => fs.unlink(f.path, () => {}));
+      await Promise.all(files.map((f) => cleanupUploadedFile(f)));
       logger.warn('Upload rejected: no user available', { ip: req.ip });
       return res.status(500).json({ error: 'No user available to associate upload with.' });
+    }
+
+    // ── Storage quota check ──────────────────────────────────────────────────
+    const quota = await getUserStorageQuota(userId);
+    if (quota > 0) {
+      const used = await getUserStorageUsed(userId);
+      const totalIncoming = files.reduce((sum, f) => sum + f.size, 0);
+      if (used + totalIncoming > quota) {
+        await Promise.all(files.map((f) => cleanupUploadedFile(f)));
+        const usedMB = (used / (1024 * 1024)).toFixed(1);
+        const quotaMB = (quota / (1024 * 1024)).toFixed(1);
+        return res.status(413).json({
+          error: `Storage quota exceeded. Used ${usedMB} MB of ${quotaMB} MB.`,
+        });
+      }
     }
 
     const host = req.get('host') || 'localhost';
@@ -241,25 +421,65 @@ router.post('/upload', requireAuth, upload.array('image', 5), async (req, res) =
         }
       }
 
-      const id = await createImage({
-        filename: item.file.filename,
-        originalName: item.file.originalname,
-        slug: item.slug,
-        mimeType: item.file.mimetype,
-        size: compression.finalSize,
-        comment,
-        tags,
-        fileHash: files.length === 1 ? fileHash : null,
-        userId,
-      });
+      let blobBuffer = null;
+      if (USE_DB_BLOBS) {
+        blobBuffer = await getUploadedFileBytes(item.file);
+      }
 
-      logger.info('Image uploaded', { id, slug: item.slug, userId, filename: item.file.filename });
+      const storageFilename = USE_DB_BLOBS
+        ? `${item.slug}${extensionFromMime(item.file.mimetype)}`
+        : item.file.filename;
+
+      let id = null;
+      try {
+        id = await createImage({
+          filename: storageFilename,
+          originalName: item.file.originalname,
+          slug: item.slug,
+          mimeType: item.file.mimetype,
+          size: compression.finalSize,
+          comment,
+          tags,
+          fileHash: files.length === 1 ? fileHash : null,
+          storageBackend: USE_DB_BLOBS ? 'db_blob' : 'file',
+          userId,
+          visibility,
+          expiresAt,
+        });
+
+        if (USE_DB_BLOBS && blobBuffer) {
+          await upsertImageBlob(id, blobBuffer);
+          await cleanupUploadedFile(item.file);
+        }
+
+        // Generate thumbnail (best-effort, non-blocking for upload response)
+        const thumbBytes = blobBuffer || await getUploadedFileBytes(item.file);
+        const thumb = await generateThumbnail(thumbBytes, item.file.mimetype);
+        if (thumb) {
+          await upsertImageThumbnail(id, thumb.data, thumb.width, thumb.height);
+        }
+      } catch (persistErr) {
+        if (id) {
+          await deleteImage(id).catch(() => {});
+        }
+        throw persistErr;
+      }
+
+      logger.info('Image uploaded', {
+        id,
+        slug: item.slug,
+        userId,
+        filename: storageFilename,
+        storage: USE_DB_BLOBS ? 'db_blob' : 'file',
+      });
       uploaded.push({
         id,
         slug: item.slug,
         url: `${protocol}://${host}/i/${item.slug}`,
         comment,
         tags,
+        visibility,
+        expiresAt,
         compression,
       });
     }
@@ -276,9 +496,7 @@ router.post('/upload', requireAuth, upload.array('image', 5), async (req, res) =
     logger.error('Upload failed', { error: err.message, stack: err.stack });
     // Clean up uploaded files on unexpected error
     if (Array.isArray(req.files)) {
-      req.files.forEach((f) => {
-        if (f && f.path) fs.unlink(f.path, () => {});
-      });
+      await Promise.all(req.files.map((f) => cleanupUploadedFile(f)));
     }
     if (!res.headersSent) {
       res.status(500).json({ error: 'Upload failed due to an internal error.' });
@@ -355,14 +573,18 @@ router.post('/download', requireAuth, async (req, res) => {
     }
 
     // Verify all files exist on disk before streaming
-    const missing = images.filter(img => !fs.existsSync(path.join(UPLOADS_DIR, img.filename)));
+    const missing = images.filter(
+      img => img.storage_backend !== 'db_blob' && !fs.existsSync(path.join(UPLOADS_DIR, img.filename))
+    );
     if (missing.length > 0) {
       logger.warn('Download requested for missing files', { missing: missing.map(m => m.filename) });
     }
 
-    const available = images.filter(img => fs.existsSync(path.join(UPLOADS_DIR, img.filename)));
+    const available = images.filter(
+      img => img.storage_backend === 'db_blob' || fs.existsSync(path.join(UPLOADS_DIR, img.filename))
+    );
     if (available.length === 0) {
-      return res.status(404).json({ error: 'No image files available on disk.' });
+      return res.status(404).json({ error: 'No images available.' });
     }
 
     res.setHeader('Content-Type', 'application/zip');
@@ -380,14 +602,21 @@ router.post('/download', requireAuth, async (req, res) => {
     // Use slug + original extension as the filename inside the zip
     const usedNames = new Set();
     for (const img of available) {
-      const ext = path.extname(img.filename);
+      const ext = path.extname(img.filename) || extensionFromMime(img.mime_type);
       let name = img.slug + ext;
       // Deduplicate in case of collisions
       if (usedNames.has(name)) {
         name = `${img.slug}_${img.id}${ext}`;
       }
       usedNames.add(name);
-      zipfile.addFile(path.join(UPLOADS_DIR, img.filename), name);
+      if (img.storage_backend === 'db_blob') {
+        const blobRow = await getImageBlobByImageId(img.id);
+        if (blobRow?.blob_data) {
+          zipfile.addBuffer(blobRow.blob_data, name);
+        }
+      } else {
+        zipfile.addFile(path.join(UPLOADS_DIR, img.filename), name);
+      }
     }
 
     zipfile.end();
@@ -421,6 +650,42 @@ router.get('/:id', requireAuth, async (req, res) => {
   }
 });
 
+// ── Update visibility ─────────────────────────────────────────────────────────
+// PATCH /api/images/:id/visibility   body: { visibility: 'public' | 'unlisted' | 'private' }
+router.patch('/:id/visibility', requireAuth, async (req, res) => {
+  try {
+    const image = await getImageById(Number(req.params.id));
+    if (!image) return res.status(404).json({ error: 'Image not found.' });
+    if (!isLocalhost(req) && !req.session.isAdmin && image.user_id !== req.session.userId) {
+      return res.status(403).json({ error: 'Forbidden.' });
+    }
+    const visibility = sanitizeVisibility(req.body.visibility);
+    await updateImageVisibility(image.id, visibility);
+    res.json({ id: image.id, visibility });
+  } catch (err) {
+    logger.error('Failed to update visibility', { id: req.params.id, error: err.message });
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to update visibility.' });
+  }
+});
+
+// ── Update expiration ─────────────────────────────────────────────────────────
+// PATCH /api/images/:id/expiration   body: { expiresAt: ISO-string | null }
+router.patch('/:id/expiration', requireAuth, async (req, res) => {
+  try {
+    const image = await getImageById(Number(req.params.id));
+    if (!image) return res.status(404).json({ error: 'Image not found.' });
+    if (!isLocalhost(req) && !req.session.isAdmin && image.user_id !== req.session.userId) {
+      return res.status(403).json({ error: 'Forbidden.' });
+    }
+    const expiresAt = req.body.expiresAt ? parseExpiresAt(req.body.expiresAt) : null;
+    await updateImageExpiration(image.id, expiresAt);
+    res.json({ id: image.id, expiresAt });
+  } catch (err) {
+    logger.error('Failed to update expiration', { id: req.params.id, error: err.message });
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to update expiration.' });
+  }
+});
+
 // ── Delete ────────────────────────────────────────────────────────────────────
 // DELETE /api/images/:id
 router.delete('/:id', requireAuth, async (req, res) => {
@@ -432,13 +697,15 @@ router.delete('/:id', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden.' });
     }
 
-    // Delete file from disk
-    const filePath = path.join(UPLOADS_DIR, image.filename);
-    fs.unlink(filePath, (unlinkErr) => {
-      if (unlinkErr && unlinkErr.code !== 'ENOENT') {
-        logger.warn('Failed to delete image file from disk', { filename: image.filename, error: unlinkErr.message });
-      }
-    });
+    if (image.storage_backend !== 'db_blob') {
+      // Delete file from disk
+      const filePath = path.join(UPLOADS_DIR, image.filename);
+      fs.unlink(filePath, (unlinkErr) => {
+        if (unlinkErr && unlinkErr.code !== 'ENOENT') {
+          logger.warn('Failed to delete image file from disk', { filename: image.filename, error: unlinkErr.message });
+        }
+      });
+    }
 
     await deleteImage(image.id);
     logger.info('Image deleted', { id: image.id, slug: image.slug });
@@ -456,6 +723,10 @@ router.use((err, _req, res, _next) => {
   logger.warn('Upload error', { error: err.message });
   if (err && err.code === 'LIMIT_UNEXPECTED_FILE') {
     return res.status(400).json({ error: 'You can upload up to 5 images at once.' });
+  }
+  if (err && err.code === 'LIMIT_FILE_SIZE') {
+    const maxMb = Math.round(MAX_FILE_SIZE_BYTES / (1024 * 1024));
+    return res.status(400).json({ error: `Each image must be ${maxMb} MB or smaller.` });
   }
   res.status(400).json({ error: err.message || 'Upload error.' });
 });

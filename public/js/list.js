@@ -222,8 +222,10 @@ function escHtml(s) {
     tbody.innerHTML = images
       .map((img) => {
         const url = `/i/${img.slug}`;
+        const thumbUrl = `/i/${img.slug}/thumb`;
         const showUser = me.isAdmin && showAllCheckbox.checked;
         const origin = window.location.origin;
+        const fullUrl = origin + url;
         const checked = selectedIds.has(img.id) ? 'checked' : '';
           const commentHtml = img.comment
             ? `<div style="margin-top:.35rem;font-size:.78rem;color:var(--text-muted)"><strong>Comment:</strong> ${escHtml(img.comment)}</div>`
@@ -231,18 +233,27 @@ function escHtml(s) {
           const tagsHtml = img.tags
             ? `<div style="margin-top:.2rem;font-size:.76rem;color:var(--accent)"><strong>Tags:</strong> ${escHtml(img.tags)}</div>`
             : '';
+          const vis = img.visibility || 'public';
+          const visBadge = vis === 'public' ? '' : `<span class="badge badge-${vis}">${vis}</span>`;
+          const expiresHtml = img.expires_at
+            ? `<div style="margin-top:.2rem;font-size:.76rem;color:var(--warning,orange)">Expires: ${App.formatDate(img.expires_at)}</div>`
+            : '';
+          const embedHtml = `<code style="font-size:.7rem;word-break:break-all">&lt;img src="${escHtml(fullUrl)}" /&gt;</code>`;
+          const markdownEmbed = `![${escHtml(img.slug)}](${escHtml(fullUrl)})`;
+          const bbcodeEmbed = `[img]${escHtml(fullUrl)}[/img]`;
         return `
         <tr>
           <td><input type="checkbox" class="img-checkbox" data-id="${img.id}" ${checked} /></td>
-          <td><img class="img-thumb" src="${url}" alt="${escHtml(img.slug)}" loading="lazy" /></td>
+          <td><img class="img-thumb" src="${thumbUrl}" alt="${escHtml(img.slug)}" loading="lazy" onerror="this.src='${url}'" /></td>
           <td>
-            <div style="font-weight:600;font-size:.9rem">${escHtml(img.slug)}</div>
+            <div style="font-weight:600;font-size:.9rem">${escHtml(img.slug)} ${visBadge}</div>
             <div class="url-box" style="margin-top:.35rem;font-size:.78rem">
               <span style="flex:1">/i/${escHtml(img.slug)}</span>
-              <button class="copy-btn" data-url="${escHtml(origin + url)}" title="Copy URL">\uD83D\uDCCB</button>
+              <button class="copy-btn" data-url="${escHtml(fullUrl)}" title="Copy URL">\uD83D\uDCCB</button>
             </div>
               ${commentHtml}
               ${tagsHtml}
+              ${expiresHtml}
           </td>
           <td ${showUser ? '' : 'style="display:none"'}>${escHtml(img.username || '')}</td>
           <td>${App.formatBytes(img.size)}</td>
@@ -251,7 +262,13 @@ function escHtml(s) {
           <td>
             <div style="display:flex;gap:.35rem;flex-wrap:wrap">
               <a class="btn btn-ghost btn-sm" href="${url}" target="_blank" rel="noopener noreferrer">\u2197\uFE0F Open</a>
+              <button class="btn btn-ghost btn-sm embed-toggle" data-embed-id="${img.id}" title="Embed codes">&lt;/&gt;</button>
               <button class="btn btn-danger btn-sm" data-delete="${img.id}">\uD83D\uDDD1 Delete</button>
+            </div>
+            <div class="embed-panel" id="embed-${img.id}" style="display:none;margin-top:.4rem;font-size:.75rem">
+              <div style="margin-bottom:.3rem"><strong>HTML:</strong> <button class="copy-btn" data-copy="${escHtml(embedHtml)}">Copy</button></div>
+              <div style="margin-bottom:.3rem"><strong>Markdown:</strong> <button class="copy-btn" data-copy="${escHtml(markdownEmbed)}">Copy</button></div>
+              <div><strong>BBCode:</strong> <button class="copy-btn" data-copy="${escHtml(bbcodeEmbed)}">Copy</button></div>
             </div>
           </td>
         </tr>`;
@@ -264,6 +281,12 @@ function escHtml(s) {
     });
     tbody.querySelectorAll('.copy-btn[data-url]').forEach((btn) => {
       btn.addEventListener('click', () => App.copyText(btn.dataset.url, btn));
+    });
+    tbody.querySelectorAll('.embed-toggle').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const panel = document.getElementById(`embed-${btn.dataset.embedId}`);
+        if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+      });
     });
     tbody.querySelectorAll('[data-delete]').forEach((btn) => {
       btn.addEventListener('click', () => deleteImage(Number(btn.dataset.delete), btn));

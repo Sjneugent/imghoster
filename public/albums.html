@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ImgHoster – Albums</title>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="navbar">
+      <a class="brand" href="/upload.html">ImgHoster</a>
+      <span class="spacer"></span>
+      <span class="user-info" id="nav-user"></span>
+      <button class="btn-logout" id="btn-logout" type="button">Log out</button>
+    </nav>
+
+    <aside class="sidebar">
+      <nav>
+        <a href="upload.html"><span class="nav-icon"></span> Upload</a>
+        <a href="list.html"><span class="nav-icon"></span> My Images</a>
+        <a href="albums.html"><span class="nav-icon"></span> Albums</a>
+        <a href="stats.html"><span class="nav-icon"></span> Statistics</a>
+        <a href="token.html"><span class="nav-icon"></span> API Token</a>
+        <a href="2fa.html"><span class="nav-icon"></span> 2FA</a>
+        <a href="dashboard.html" data-admin-only><span class="nav-icon"></span> Dashboard</a>
+      </nav>
+    </aside>
+
+    <main class="main-content">
+      <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
+        <h1 class="page-title" style="margin:0">Albums</h1>
+        <span style="flex:1"></span>
+        <button class="btn btn-primary btn-sm" id="btn-new-album">New Album</button>
+      </div>
+
+      <div class="alert" id="alert" role="alert"></div>
+
+      <!-- New album form (hidden by default) -->
+      <div class="card" id="new-album-form" style="display:none;max-width:480px;margin-bottom:1.5rem">
+        <h3 style="margin-top:0">Create Album</h3>
+        <div class="form-group">
+          <label class="form-label" for="album-name">Name</label>
+          <input class="form-control" type="text" id="album-name" maxlength="200" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="album-desc">Description (optional)</label>
+          <textarea class="form-control" id="album-desc" rows="2" maxlength="2000"></textarea>
+        </div>
+        <div style="display:flex;gap:.5rem">
+          <button class="btn btn-primary btn-sm" id="btn-create-album">Create</button>
+          <button class="btn btn-ghost btn-sm" id="btn-cancel-album">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Albums list -->
+      <div id="albums-list">
+        <p style="color:var(--text-muted)">Loading...</p>
+      </div>
+
+      <!-- Album detail view (hidden) -->
+      <div id="album-detail" style="display:none">
+        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem">
+          <button class="btn btn-ghost btn-sm" id="btn-back-albums">&larr; Back</button>
+          <h2 id="album-detail-name" style="margin:0"></h2>
+        </div>
+        <p id="album-detail-desc" style="color:var(--text-muted);font-size:.9rem"></p>
+        <div id="album-images" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:1rem;margin-top:1rem"></div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script src="/js/albums.js"></script>
+</body>
+</html>

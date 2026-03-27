@@ -134,6 +134,110 @@ class BaseAdapter {
     throw new Error('Not implemented: getImagesByIds');
   }
 
+  async upsertImageBlob(imageId, blobData) {
+    throw new Error('Not implemented: upsertImageBlob');
+  }
+
+  async getImageBlobByImageId(imageId) {
+    throw new Error('Not implemented: getImageBlobByImageId');
+  }
+
+  // ── Thumbnail helpers ─────────────────────────────────────────────────────
+
+  async upsertImageThumbnail(imageId, thumbData, width, height) {
+    throw new Error('Not implemented: upsertImageThumbnail');
+  }
+
+  async getImageThumbnail(imageId) {
+    throw new Error('Not implemented: getImageThumbnail');
+  }
+
+  // ── Album helpers ─────────────────────────────────────────────────────────
+
+  async createAlbum(data) {
+    throw new Error('Not implemented: createAlbum');
+  }
+
+  async getAlbumById(id) {
+    throw new Error('Not implemented: getAlbumById');
+  }
+
+  async listAlbumsByUser(userId) {
+    throw new Error('Not implemented: listAlbumsByUser');
+  }
+
+  async updateAlbum(id, data) {
+    throw new Error('Not implemented: updateAlbum');
+  }
+
+  async deleteAlbum(id) {
+    throw new Error('Not implemented: deleteAlbum');
+  }
+
+  async addImagesToAlbum(albumId, imageIds) {
+    throw new Error('Not implemented: addImagesToAlbum');
+  }
+
+  async removeImageFromAlbum(albumId, imageId) {
+    throw new Error('Not implemented: removeImageFromAlbum');
+  }
+
+  async getAlbumImages(albumId) {
+    throw new Error('Not implemented: getAlbumImages');
+  }
+
+  // ── Visibility helpers ────────────────────────────────────────────────────
+
+  async updateImageVisibility(imageId, visibility) {
+    throw new Error('Not implemented: updateImageVisibility');
+  }
+
+  // ── Expiration helpers ────────────────────────────────────────────────────
+
+  async getExpiredImages() {
+    throw new Error('Not implemented: getExpiredImages');
+  }
+
+  async updateImageExpiration(imageId, expiresAt) {
+    throw new Error('Not implemented: updateImageExpiration');
+  }
+
+  // ── Quota helpers ─────────────────────────────────────────────────────────
+
+  async getUserStorageUsed(userId) {
+    throw new Error('Not implemented: getUserStorageUsed');
+  }
+
+  async getUserStorageQuota(userId) {
+    throw new Error('Not implemented: getUserStorageQuota');
+  }
+
+  async setUserStorageQuota(userId, quotaBytes) {
+    throw new Error('Not implemented: setUserStorageQuota');
+  }
+
+  // ── TOTP helpers ──────────────────────────────────────────────────────────
+
+  async saveTotpSecret(userId, secret) {
+    throw new Error('Not implemented: saveTotpSecret');
+  }
+
+  async enableTotp(userId) {
+    throw new Error('Not implemented: enableTotp');
+  }
+
+  async disableTotp(userId) {
+    throw new Error('Not implemented: disableTotp');
+  }
+
+  async getTotpSecret(userId) {
+    throw new Error('Not implemented: getTotpSecret');
+  }
+
+  async isTotpEnabled(userId) {
+    throw new Error('Not implemented: isTotpEnabled');
+  }
+
   // ── View / stats helpers ──────────────────────────────────────────────────
 
   async recordView(imageId, ipAddress, referrer) {

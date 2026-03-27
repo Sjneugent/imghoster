@@ -29,6 +29,7 @@ class SqliteAdapter extends BaseAdapter {
         real_name TEXT,
         password_hash TEXT NOT NULL,
         is_admin INTEGER NOT NULL DEFAULT 0,
+        storage_quota_bytes INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
 
@@ -39,12 +40,23 @@ class SqliteAdapter extends BaseAdapter {
         slug TEXT UNIQUE NOT NULL,
         mime_type TEXT NOT NULL,
         size INTEGER NOT NULL,
+        storage_backend TEXT NOT NULL DEFAULT 'file',
         file_hash TEXT,
         comment TEXT,
         tags TEXT,
+        visibility TEXT NOT NULL DEFAULT 'public',
+        expires_at TEXT,
         user_id INTEGER NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS image_blobs (
+        image_id INTEGER PRIMARY KEY,
+        blob_data BLOB NOT NULL,
+        blob_size INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS image_views (
@@ -102,6 +114,46 @@ class SqliteAdapter extends BaseAdapter {
       CREATE INDEX IF NOT EXISTS idx_flags_status ON content_flags(status);
       CREATE INDEX IF NOT EXISTS idx_flags_created ON content_flags(created_at);
       CREATE INDEX IF NOT EXISTS idx_resolutions_flag ON flag_resolutions(flag_id);
+
+      CREATE TABLE IF NOT EXISTS image_thumbnails (
+        image_id INTEGER PRIMARY KEY,
+        thumb_data BLOB NOT NULL,
+        thumb_size INTEGER NOT NULL,
+        width INTEGER NOT NULL,
+        height INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS albums (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        user_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS album_images (
+        album_id INTEGER NOT NULL,
+        image_id INTEGER NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        added_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (album_id, image_id),
+        FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE,
+        FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS totp_secrets (
+        user_id INTEGER PRIMARY KEY,
+        secret TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_albums_user ON albums(user_id);
+      CREATE INDEX IF NOT EXISTS idx_album_images_image ON album_images(image_id);
     `);
 
     // Backward-compatible migration for existing DB files.
@@ -124,6 +176,7 @@ class SqliteAdapter extends BaseAdapter {
     const hasComment = imageCols.some(c => c.name === 'comment');
     const hasTags = imageCols.some(c => c.name === 'tags');
     const hasFileHash = imageCols.some(c => c.name === 'file_hash');
+    const hasStorageBackend = imageCols.some(c => c.name === 'storage_backend');
     if (!hasComment) {
       this.db.exec('ALTER TABLE images ADD COLUMN comment TEXT');
     }
@@ -133,9 +186,83 @@ class SqliteAdapter extends BaseAdapter {
     if (!hasFileHash) {
       this.db.exec('ALTER TABLE images ADD COLUMN file_hash TEXT');
     }
+    if (!hasStorageBackend) {
+      this.db.exec("ALTER TABLE images ADD COLUMN storage_backend TEXT NOT NULL DEFAULT 'file'");
+    }
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS image_blobs (
+        image_id INTEGER PRIMARY KEY,
+        blob_data BLOB NOT NULL,
+        blob_size INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+      )
+    `);
 
     // Create index for file hash lookups
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_images_file_hash ON images(file_hash)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_images_storage_backend ON images(storage_backend)');
+
+    // New column migrations for visibility, expiration, quotas
+    const hasVisibility = imageCols.some(c => c.name === 'visibility');
+    const hasExpiresAt = imageCols.some(c => c.name === 'expires_at');
+    if (!hasVisibility) {
+      this.db.exec("ALTER TABLE images ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'");
+    }
+    if (!hasExpiresAt) {
+      this.db.exec('ALTER TABLE images ADD COLUMN expires_at TEXT');
+    }
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_images_visibility ON images(visibility)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_images_expires ON images(expires_at)');
+
+    const hasStorageQuota = userCols.some(c => c.name === 'storage_quota_bytes');
+    const hasTotpSecret = userCols.some(c => c.name === 'totp_secret');
+    if (!hasStorageQuota) {
+      this.db.exec('ALTER TABLE users ADD COLUMN storage_quota_bytes INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!hasTotpSecret) {
+      // Kept on users for quick lookup; full totp_secrets table for detailed management
+    }
+
+    // Create new tables for existing DBs via IF NOT EXISTS (already in main schema above)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS image_thumbnails (
+        image_id INTEGER PRIMARY KEY,
+        thumb_data BLOB NOT NULL,
+        thumb_size INTEGER NOT NULL,
+        width INTEGER NOT NULL,
+        height INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS albums (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        user_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS album_images (
+        album_id INTEGER NOT NULL,
+        image_id INTEGER NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        added_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (album_id, image_id),
+        FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE,
+        FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS totp_secrets (
+        user_id INTEGER PRIMARY KEY,
+        secret TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_albums_user ON albums(user_id);
+      CREATE INDEX IF NOT EXISTS idx_album_images_image ON album_images(image_id);
+    `);
 
     return this;
   }
@@ -254,13 +381,30 @@ class SqliteAdapter extends BaseAdapter {
 
   // ── Image helpers ─────────────────────────────────────────────────────────
 
-  async createImage({ filename, originalName, slug, mimeType, size, userId, comment = null, tags = null, fileHash = null }) {
+  async createImage({ filename, originalName, slug, mimeType, size, userId, comment = null, tags = null, fileHash = null, storageBackend = 'file', visibility = 'public', expiresAt = null }) {
     const stmt = this.db.prepare(
-      `INSERT INTO images (filename, original_name, slug, mime_type, size, file_hash, comment, tags, user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO images (filename, original_name, slug, mime_type, size, storage_backend, file_hash, comment, tags, user_id, visibility, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
-    const result = stmt.run(filename, originalName, slug, mimeType, size, fileHash, comment, tags, userId);
+    const result = stmt.run(filename, originalName, slug, mimeType, size, storageBackend, fileHash, comment, tags, userId, visibility, expiresAt);
     return Number(result.lastInsertRowid);
+  }
+
+  async upsertImageBlob(imageId, blobData) {
+    const stmt = this.db.prepare(
+      `INSERT INTO image_blobs (image_id, blob_data, blob_size)
+       VALUES (?, ?, ?)
+       ON CONFLICT(image_id) DO UPDATE SET
+         blob_data = excluded.blob_data,
+         blob_size = excluded.blob_size`
+    );
+    stmt.run(imageId, blobData, blobData.length);
+  }
+
+  async getImageBlobByImageId(imageId) {
+    return this.db
+      .prepare('SELECT image_id, blob_data, blob_size, created_at FROM image_blobs WHERE image_id = ?')
+      .get(imageId);
   }
 
   async getImageBySlug(slug) {
@@ -459,8 +603,9 @@ class SqliteAdapter extends BaseAdapter {
     const users = this.db.prepare('SELECT * FROM users').all();
     const images = this.db.prepare('SELECT * FROM images').all();
     const imageViews = this.db.prepare('SELECT * FROM image_views').all();
+    const imageBlobs = this.db.prepare('SELECT * FROM image_blobs').all();
     const apiTokens = this.db.prepare('SELECT * FROM api_tokens').all();
-    return { users, images, image_views: imageViews, api_tokens: apiTokens };
+    return { users, images, image_views: imageViews, image_blobs: imageBlobs, api_tokens: apiTokens };
   }
 
   async importData(data) {
@@ -468,6 +613,7 @@ class SqliteAdapter extends BaseAdapter {
       // Clear existing data (order matters for foreign keys)
       this.db.prepare('DELETE FROM api_tokens').run();
       this.db.prepare('DELETE FROM image_views').run();
+      this.db.prepare('DELETE FROM image_blobs').run();
       this.db.prepare('DELETE FROM images').run();
       this.db.prepare('DELETE FROM users').run();
 
@@ -490,14 +636,25 @@ class SqliteAdapter extends BaseAdapter {
 
       // Import images
       const insertImage = this.db.prepare(
-        `INSERT INTO images (id, filename, original_name, slug, mime_type, size, comment, tags, user_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO images (id, filename, original_name, slug, mime_type, size, storage_backend, file_hash, comment, tags, user_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       );
       for (const img of data.images) {
         insertImage.run(
           img.id, img.filename, img.original_name, img.slug,
-          img.mime_type, img.size, img.comment || null, img.tags || null, img.user_id, img.created_at
+          img.mime_type, img.size, img.storage_backend || 'file', img.file_hash || null,
+          img.comment || null, img.tags || null, img.user_id, img.created_at
         );
+      }
+
+      if (Array.isArray(data.image_blobs)) {
+        const insertBlob = this.db.prepare(
+          `INSERT INTO image_blobs (image_id, blob_data, blob_size, created_at)
+           VALUES (?, ?, ?, ?)`
+        );
+        for (const b of data.image_blobs) {
+          insertBlob.run(b.image_id, b.blob_data, b.blob_size, b.created_at);
+        }
       }
 
       // Import views
@@ -621,6 +778,183 @@ class SqliteAdapter extends BaseAdapter {
     if (!flag) return null;
     const resolutions = await this.getFlagResolutions(flagId);
     return { ...flag, resolutions };
+  }
+
+  // ── Thumbnail helpers ─────────────────────────────────────────────────────
+
+  async upsertImageThumbnail(imageId, thumbData, width, height) {
+    const stmt = this.db.prepare(
+      `INSERT INTO image_thumbnails (image_id, thumb_data, thumb_size, width, height)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(image_id) DO UPDATE SET
+         thumb_data = excluded.thumb_data,
+         thumb_size = excluded.thumb_size,
+         width = excluded.width,
+         height = excluded.height`
+    );
+    stmt.run(imageId, thumbData, thumbData.length, width, height);
+  }
+
+  async getImageThumbnail(imageId) {
+    return this.db
+      .prepare('SELECT image_id, thumb_data, thumb_size, width, height FROM image_thumbnails WHERE image_id = ?')
+      .get(imageId);
+  }
+
+  // ── Album helpers ─────────────────────────────────────────────────────────
+
+  async createAlbum({ name, description = null, userId }) {
+    const stmt = this.db.prepare(
+      'INSERT INTO albums (name, description, user_id) VALUES (?, ?, ?)'
+    );
+    const result = stmt.run(name, description, userId);
+    return Number(result.lastInsertRowid);
+  }
+
+  async getAlbumById(id) {
+    return this.db.prepare('SELECT * FROM albums WHERE id = ?').get(id);
+  }
+
+  async listAlbumsByUser(userId) {
+    return this.db
+      .prepare(
+        `SELECT a.*, COUNT(ai.image_id) AS image_count
+         FROM albums a
+         LEFT JOIN album_images ai ON ai.album_id = a.id
+         WHERE a.user_id = ?
+         GROUP BY a.id
+         ORDER BY a.created_at DESC`
+      )
+      .all(userId);
+  }
+
+  async updateAlbum(id, { name, description }) {
+    return this.db
+      .prepare('UPDATE albums SET name = ?, description = ? WHERE id = ?')
+      .run(name, description || null, id);
+  }
+
+  async deleteAlbum(id) {
+    return this.db.prepare('DELETE FROM albums WHERE id = ?').run(id);
+  }
+
+  async addImagesToAlbum(albumId, imageIds) {
+    const stmt = this.db.prepare(
+      `INSERT OR IGNORE INTO album_images (album_id, image_id, sort_order)
+       VALUES (?, ?, ?)`
+    );
+    const trx = this.db.transaction(() => {
+      for (let i = 0; i < imageIds.length; i++) {
+        stmt.run(albumId, imageIds[i], i);
+      }
+    });
+    trx();
+  }
+
+  async removeImageFromAlbum(albumId, imageId) {
+    return this.db
+      .prepare('DELETE FROM album_images WHERE album_id = ? AND image_id = ?')
+      .run(albumId, imageId);
+  }
+
+  async getAlbumImages(albumId) {
+    return this.db
+      .prepare(
+        `SELECT i.*, ai.sort_order, COUNT(v.id) AS view_count
+         FROM album_images ai
+         JOIN images i ON i.id = ai.image_id
+         LEFT JOIN image_views v ON v.image_id = i.id
+         WHERE ai.album_id = ?
+         GROUP BY i.id
+         ORDER BY ai.sort_order`
+      )
+      .all(albumId);
+  }
+
+  // ── Visibility helpers ────────────────────────────────────────────────────
+
+  async updateImageVisibility(imageId, visibility) {
+    return this.db
+      .prepare('UPDATE images SET visibility = ? WHERE id = ?')
+      .run(visibility, imageId);
+  }
+
+  // ── Expiration helpers ────────────────────────────────────────────────────
+
+  async getExpiredImages() {
+    return this.db
+      .prepare(
+        `SELECT * FROM images
+         WHERE expires_at IS NOT NULL
+           AND datetime(expires_at) <= datetime('now')`
+      )
+      .all();
+  }
+
+  async updateImageExpiration(imageId, expiresAt) {
+    return this.db
+      .prepare('UPDATE images SET expires_at = ? WHERE id = ?')
+      .run(expiresAt, imageId);
+  }
+
+  // ── Quota helpers ─────────────────────────────────────────────────────────
+
+  async getUserStorageUsed(userId) {
+    const row = this.db
+      .prepare('SELECT COALESCE(SUM(size), 0) AS used FROM images WHERE user_id = ?')
+      .get(userId);
+    return row.used;
+  }
+
+  async getUserStorageQuota(userId) {
+    const row = this.db
+      .prepare('SELECT storage_quota_bytes FROM users WHERE id = ?')
+      .get(userId);
+    return row ? row.storage_quota_bytes : 0;
+  }
+
+  async setUserStorageQuota(userId, quotaBytes) {
+    return this.db
+      .prepare('UPDATE users SET storage_quota_bytes = ? WHERE id = ?')
+      .run(quotaBytes, userId);
+  }
+
+  // ── TOTP helpers ──────────────────────────────────────────────────────────
+
+  async saveTotpSecret(userId, secret) {
+    const stmt = this.db.prepare(
+      `INSERT INTO totp_secrets (user_id, secret, enabled)
+       VALUES (?, ?, 0)
+       ON CONFLICT(user_id) DO UPDATE SET
+         secret = excluded.secret,
+         enabled = 0`
+    );
+    stmt.run(userId, secret);
+  }
+
+  async enableTotp(userId) {
+    return this.db
+      .prepare('UPDATE totp_secrets SET enabled = 1 WHERE user_id = ?')
+      .run(userId);
+  }
+
+  async disableTotp(userId) {
+    return this.db
+      .prepare('DELETE FROM totp_secrets WHERE user_id = ?')
+      .run(userId);
+  }
+
+  async getTotpSecret(userId) {
+    return this.db
+      .prepare('SELECT * FROM totp_secrets WHERE user_id = ?')
+      .get(userId);
+  }
+
+  async isTotpEnabled(userId) {
+    const row = this.db
+      .prepare('SELECT enabled FROM totp_secrets WHERE user_id = ?')
+      .get(userId);
+    return row ? row.enabled === 1 : false;
   }
 }
 

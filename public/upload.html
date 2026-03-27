@@ -11,7 +11,7 @@
   <div class="app-shell">
     <!-- Navbar -->
     <nav class="navbar">
-      <a class="brand" href="/upload.html">🖼️ ImgHoster</a>
+      <a class="brand" href="/upload.html">ImgHoster</a>
       <span class="spacer"></span>
       <span class="user-info" id="nav-user"></span>
       <button class="btn-logout" id="btn-logout" type="button">Log out</button>
@@ -20,11 +20,13 @@
     <!-- Sidebar -->
     <aside class="sidebar">
       <nav>
-        <a href="upload.html"><span class="nav-icon">⬆️</span> Upload</a>
-        <a href="list.html"><span class="nav-icon">🗂️</span> My Images</a>
-        <a href="stats.html"><span class="nav-icon">📊</span> Statistics</a>
-        <a href="token.html"><span class="nav-icon">🔐</span> API Token</a>
-        <a href="dashboard.html" data-admin-only><span class="nav-icon">⚙️</span> Dashboard</a>
+        <a href="upload.html"><span class="nav-icon"></span> Upload</a>
+        <a href="list.html"><span class="nav-icon"></span> My Images</a>
+        <a href="albums.html"><span class="nav-icon"></span> Albums</a>
+        <a href="stats.html"><span class="nav-icon"></span> Statistics</a>
+        <a href="token.html"><span class="nav-icon"></span> API Token</a>
+        <a href="2fa.html"><span class="nav-icon"></span> 2FA</a>
+        <a href="dashboard.html" data-admin-only><span class="nav-icon"></span> Dashboard</a>
       </nav>
     </aside>
 
@@ -41,11 +43,11 @@
             <label class="form-label">Image File</label>
             <div class="drop-zone" id="drop-zone">
               <input type="file" id="file-input" name="image"
-                accept="image/jpeg,image/png,image/gif,image/webp" multiple />
-              <div class="dz-icon">📁</div>
+                accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml" multiple />
+              <div class="dz-icon">File</div>
               <div class="dz-label">Drag &amp; drop an image here, or <strong>click to browse</strong></div>
               <p style="font-size:.8rem;color:var(--text-muted);margin-top:.5rem">
-                JPEG, PNG, GIF, WebP - up to 5 files, 20 MB each
+                JPEG, PNG, GIF, WebP, SVG - up to 5 files, 10 MB each
               </p>
               <div class="dz-preview dz-preview-grid" id="dz-preview" style="display:none" aria-live="polite">
               </div>
@@ -85,20 +87,46 @@
             <p class="form-hint">Separate tags with commas.</p>
           </div>
 
+          <!-- Visibility -->
+          <div class="form-group">
+            <label class="form-label" for="visibility">Visibility</label>
+            <select class="form-control" id="visibility" name="visibility">
+              <option value="public" selected>Public - visible to everyone</option>
+              <option value="unlisted">Unlisted - accessible by direct link only</option>
+              <option value="private">Private - only you can see it</option>
+            </select>
+          </div>
+
+          <!-- Expiration -->
+          <div class="form-group">
+            <label class="form-label" for="expires-at">Auto-expire (optional)</label>
+            <select class="form-control" id="expires-at" name="expiresAt">
+              <option value="" selected>Never</option>
+              <option value="1h">1 hour</option>
+              <option value="24h">24 hours</option>
+              <option value="7d">7 days</option>
+              <option value="30d">30 days</option>
+              <option value="custom">Custom date...</option>
+            </select>
+            <input class="form-control" type="datetime-local" id="expires-at-custom"
+                   style="display:none;margin-top:.5rem" />
+            <p class="form-hint">Image will be automatically deleted after this time.</p>
+          </div>
+
           <button class="btn btn-primary" type="submit" id="upload-btn" disabled>
-            ⬆️ Upload
+            Upload
           </button>
         </form>
 
         <!-- Result -->
         <div id="result" style="display:none;margin-top:1.5rem">
-          <p style="font-weight:600;color:var(--success);margin-bottom:.6rem">✓ Uploaded successfully!</p>
+          <p style="font-weight:600;color:var(--success);margin-bottom:.6rem">Uploaded successfully.</p>
           <div class="url-box">
             <span id="result-url" style="flex:1"></span>
-            <button class="copy-btn" id="copy-btn" title="Copy URL">📋</button>
+            <button class="copy-btn" id="copy-btn" title="Copy URL">Copy</button>
           </div>
           <div style="margin-top:.75rem;display:flex;gap:.5rem;flex-wrap:wrap">
-            <a class="btn btn-ghost btn-sm" id="view-link" href="#" target="_blank" rel="noopener">Open image ↗</a>
+            <a class="btn btn-ghost btn-sm" id="view-link" href="#" target="_blank" rel="noopener">Open image</a>
             <button class="btn btn-ghost btn-sm" id="upload-another">Upload another</button>
           </div>
         </div>

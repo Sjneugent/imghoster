@@ -1,4 +1,4 @@
-import dotenv from 'dotenv';
+import './env.js';
 import express from 'express';
 import session from 'express-session';
 import helmet from 'helmet';
@@ -19,11 +19,11 @@ import adminRoutes from './routes/admin.js';
 import statsRoutes from './routes/stats.js';
 import serveRoutes from './routes/serve.js';
 import flagsRoutes from './routes/flags.js';
+import albumsRoutes from './routes/albums.js';
+import { getExpiredImages, deleteImage } from './db/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-dotenv.config({ path: path.join(__dirname, '.env') });
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -95,9 +95,10 @@ app.use(
 app.use(csrfTokenMiddleware);
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
+const isTest = process.env.NODE_ENV === 'test';
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 15,
+  max: isTest ? 10000 : 15,
   message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -105,7 +106,7 @@ const loginLimiter = rateLimit({
 
 const generalLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 120,
+  max: isTest ? 10000 : 120,
   message: { error: 'Too many requests. Please slow down.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -157,6 +158,7 @@ app.use('/api/flags', generalLimiter, csrfProtect, flagsRoutes); // Public for P
 app.use('/api/images', generalLimiter, requireApiToken, csrfProtect, imagesRoutes);
 app.use('/api/admin', generalLimiter, requireApiToken, csrfProtect, adminRoutes);
 app.use('/api/stats', generalLimiter, requireApiToken, statsRoutes);
+app.use('/api/albums', generalLimiter, requireApiToken, csrfProtect, albumsRoutes);
 app.use('/i', generalLimiter, serveRoutes); // public image serving
 
 // Root redirect
@@ -190,8 +192,35 @@ process.on('unhandledRejection', (reason) => {
 });
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
+// ── Expiration cleanup (runs every 10 minutes) ───────────────────────────────
+const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
+let cleanupTimer = null;
+
+async function cleanupExpiredImages() {
+  try {
+    const expired = await getExpiredImages();
+    for (const img of expired) {
+      await deleteImage(img.id).catch(() => {});
+      logger.info('Expired image cleaned up', { id: img.id, slug: img.slug });
+    }
+    if (expired.length > 0) {
+      logger.info(`Cleaned up ${expired.length} expired image(s)`);
+    }
+  } catch (err) {
+    logger.error('Expiration cleanup error', { error: err.message });
+  }
+}
+
 async function start() {
   await initDB(DB_PATH);
+
+  // Start periodic cleanup of expired images
+  cleanupTimer = setInterval(cleanupExpiredImages, CLEANUP_INTERVAL_MS);
+  if (cleanupTimer.unref) cleanupTimer.unref();
+
+  // Start automated backup scheduler (if enabled via env)
+  const { startScheduler } = await import('./scripts/backup-scheduler.js');
+  startScheduler();
 
   const server = app.listen(PORT, HOST, () => {
     logger.info(`ImgHoster listening on http://${HOST}:${server.address().port}`);

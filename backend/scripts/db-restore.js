@@ -19,7 +19,7 @@ import { initDB, importData } from '../db/index.js';
  *   node scripts/db-restore.js ./backups/backup_2024-01-15.db
  *   node scripts/db-restore.js ./backups/export.json
  *
- * ⚠️  WARNING: This will OVERWRITE the current database.
+ * WARNING: This will OVERWRITE the current database.
  */
 
 const __filename = fileURLToPath(import.meta.url);
@@ -38,7 +38,7 @@ const DB_TYPE = (process.env.DB_TYPE || 'sqlite').toLowerCase();
   }
 
   if (!fs.existsSync(backupPath)) {
-    console.error(`❌ Backup file not found: ${backupPath}`);
+    console.error(`Backup file not found: ${backupPath}`);
     process.exit(1);
   }
 
@@ -49,7 +49,7 @@ const DB_TYPE = (process.env.DB_TYPE || 'sqlite').toLowerCase();
         await initDB(DB_PATH);
         const data = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
         await importData(data);
-        console.log(`✅ Restored from JSON export into SQLite: ${DB_PATH}`);
+        console.log(`Restored from JSON export into SQLite: ${DB_PATH}`);
         console.log(`   Users: ${data.users.length}, Images: ${data.images.length}`);
       } else {
         // Direct file copy restore
@@ -63,7 +63,7 @@ const DB_TYPE = (process.env.DB_TYPE || 'sqlite').toLowerCase();
           if (fs.existsSync(f)) fs.unlinkSync(f);
         }
 
-        console.log(`✅ SQLite database restored from: ${backupPath}`);
+        console.log(`SQLite database restored from: ${backupPath}`);
         console.log(`   Database: ${DB_PATH}`);
       }
     } else {
@@ -77,7 +77,7 @@ const DB_TYPE = (process.env.DB_TYPE || 'sqlite').toLowerCase();
       }
 
       await importData(data);
-      console.log(`✅ Database restored from: ${backupPath}`);
+      console.log(`Database restored from: ${backupPath}`);
       console.log(`   Users: ${data.users.length}`);
       console.log(`   Images: ${data.images.length}`);
       console.log(`   Views: ${data.image_views.length}`);
@@ -85,7 +85,7 @@ const DB_TYPE = (process.env.DB_TYPE || 'sqlite').toLowerCase();
 
     process.exit(0);
   } catch (err) {
-    console.error('❌ Restore failed:', err.message);
+    console.error('Restore failed:', err.message);
     process.exit(1);
   }
 })();

@@ -65,7 +65,7 @@ const App = (() => {
     try {
       await navigator.clipboard.writeText(text);
       const orig = btn.textContent;
-      btn.textContent = '✓';
+      btn.textContent = 'Copied';
       setTimeout(() => (btn.textContent = orig), 1500);
     } catch (_) { /* ignore */ }
   }

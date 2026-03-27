@@ -151,6 +151,110 @@ async function getImagesByIds(ids) {
   return getAdapter().getImagesByIds(ids);
 }
 
+async function upsertImageBlob(imageId, blobData) {
+  return getAdapter().upsertImageBlob(imageId, blobData);
+}
+
+async function getImageBlobByImageId(imageId) {
+  return getAdapter().getImageBlobByImageId(imageId);
+}
+
+// ── Thumbnail proxy functions ────────────────────────────────────────────────
+
+async function upsertImageThumbnail(imageId, thumbData, width, height) {
+  return getAdapter().upsertImageThumbnail(imageId, thumbData, width, height);
+}
+
+async function getImageThumbnail(imageId) {
+  return getAdapter().getImageThumbnail(imageId);
+}
+
+// ── Album proxy functions ────────────────────────────────────────────────────
+
+async function createAlbum(data) {
+  return getAdapter().createAlbum(data);
+}
+
+async function getAlbumById(id) {
+  return getAdapter().getAlbumById(id);
+}
+
+async function listAlbumsByUser(userId) {
+  return getAdapter().listAlbumsByUser(userId);
+}
+
+async function updateAlbum(id, data) {
+  return getAdapter().updateAlbum(id, data);
+}
+
+async function deleteAlbum(id) {
+  return getAdapter().deleteAlbum(id);
+}
+
+async function addImagesToAlbum(albumId, imageIds) {
+  return getAdapter().addImagesToAlbum(albumId, imageIds);
+}
+
+async function removeImageFromAlbum(albumId, imageId) {
+  return getAdapter().removeImageFromAlbum(albumId, imageId);
+}
+
+async function getAlbumImages(albumId) {
+  return getAdapter().getAlbumImages(albumId);
+}
+
+// ── Visibility proxy functions ───────────────────────────────────────────────
+
+async function updateImageVisibility(imageId, visibility) {
+  return getAdapter().updateImageVisibility(imageId, visibility);
+}
+
+// ── Expiration proxy functions ───────────────────────────────────────────────
+
+async function getExpiredImages() {
+  return getAdapter().getExpiredImages();
+}
+
+async function updateImageExpiration(imageId, expiresAt) {
+  return getAdapter().updateImageExpiration(imageId, expiresAt);
+}
+
+// ── Quota proxy functions ────────────────────────────────────────────────────
+
+async function getUserStorageUsed(userId) {
+  return getAdapter().getUserStorageUsed(userId);
+}
+
+async function getUserStorageQuota(userId) {
+  return getAdapter().getUserStorageQuota(userId);
+}
+
+async function setUserStorageQuota(userId, quotaBytes) {
+  return getAdapter().setUserStorageQuota(userId, quotaBytes);
+}
+
+// ── TOTP proxy functions ─────────────────────────────────────────────────────
+
+async function saveTotpSecret(userId, secret) {
+  return getAdapter().saveTotpSecret(userId, secret);
+}
+
+async function enableTotp(userId) {
+  return getAdapter().enableTotp(userId);
+}
+
+async function disableTotp(userId) {
+  return getAdapter().disableTotp(userId);
+}
+
+async function getTotpSecret(userId) {
+  return getAdapter().getTotpSecret(userId);
+}
+
+async function isTotpEnabled(userId) {
+  return getAdapter().isTotpEnabled(userId);
+}
+
 async function checkDuplicateHash(fileHash) {
   return getAdapter().checkDuplicateHash(fileHash);
 }
@@ -238,6 +342,8 @@ export {
   slugExists,
   searchImages,
   getImagesByIds,
+  upsertImageBlob,
+  getImageBlobByImageId,
   checkDuplicateHash,
   getImagesByFileHash,
   recordView,
@@ -253,4 +359,25 @@ export {
   createFlagResolution,
   getFlagResolutions,
   getFlagWithResolutions,
+  upsertImageThumbnail,
+  getImageThumbnail,
+  createAlbum,
+  getAlbumById,
+  listAlbumsByUser,
+  updateAlbum,
+  deleteAlbum,
+  addImagesToAlbum,
+  removeImageFromAlbum,
+  getAlbumImages,
+  updateImageVisibility,
+  getExpiredImages,
+  updateImageExpiration,
+  getUserStorageUsed,
+  getUserStorageQuota,
+  setUserStorageQuota,
+  saveTotpSecret,
+  enableTotp,
+  disableTotp,
+  getTotpSecret,
+  isTotpEnabled,
 };

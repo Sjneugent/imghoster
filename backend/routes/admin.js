@@ -1,7 +1,8 @@
 import express from 'express';
 const router = express.Router();
 import { requireAdmin } from '../middleware/requireAuth.js';
-import { listUsers, createUser, deleteUser, updateUserPassword, getUserById } from '../db/index.js';
+import { listUsers, createUser, deleteUser, updateUserPassword, getUserById, setUserStorageQuota, getUserStorageQuota, getUserStorageUsed } from '../db/index.js';
+import { runBackup, getSchedulerStatus, updateSchedulerConfig } from '../scripts/backup-scheduler.js';
 import logger from '../logger.js';
 
 // All admin routes require admin privileges
@@ -85,6 +86,72 @@ router.delete('/users/:id', async (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ error: 'Failed to delete user.' });
     }
+  }
+});
+
+// PATCH /api/admin/users/:id/quota
+router.patch('/users/:id/quota', async (req, res) => {
+  try {
+    const user = await getUserById(Number(req.params.id));
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+
+    const quotaBytes = Math.max(0, Number(req.body.quotaBytes) || 0);
+    await setUserStorageQuota(user.id, quotaBytes);
+    logger.info('User quota updated', { userId: user.id, quotaBytes });
+    res.json({ userId: user.id, quotaBytes });
+  } catch (err) {
+    logger.error('Failed to set quota', { id: req.params.id, error: err.message });
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to set quota.' });
+  }
+});
+
+// GET /api/admin/users/:id/quota
+router.get('/users/:id/quota', async (req, res) => {
+  try {
+    const user = await getUserById(Number(req.params.id));
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+
+    const quota = await getUserStorageQuota(user.id);
+    const used = await getUserStorageUsed(user.id);
+    res.json({ userId: user.id, quotaBytes: quota, usedBytes: used });
+  } catch (err) {
+    logger.error('Failed to get quota', { id: req.params.id, error: err.message });
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to get quota.' });
+  }
+});
+
+// ── Backup management ─────────────────────────────────────────────────────────
+
+// GET /api/admin/backups/status
+router.get('/backups/status', async (_req, res) => {
+  res.json(getSchedulerStatus());
+});
+
+// POST /api/admin/backups/run – trigger an immediate backup
+router.post('/backups/run', async (_req, res) => {
+  try {
+    const result = await runBackup();
+    res.json(result);
+  } catch (err) {
+    logger.error('Manual backup failed', { error: err.message });
+    if (!res.headersSent) res.status(500).json({ error: 'Backup failed.' });
+  }
+});
+
+// PATCH /api/admin/backups/config – update scheduler configuration
+router.patch('/backups/config', async (req, res) => {
+  try {
+    const updates = {};
+    if (req.body.enabled !== undefined) updates.enabled = !!req.body.enabled;
+    if (req.body.intervalMs !== undefined) updates.intervalMs = Number(req.body.intervalMs);
+    if (req.body.retainCount !== undefined) updates.retainCount = Number(req.body.retainCount);
+
+    const status = updateSchedulerConfig(updates);
+    logger.info('Backup scheduler config updated', status);
+    res.json(status);
+  } catch (err) {
+    logger.error('Failed to update backup config', { error: err.message });
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to update config.' });
   }
 });
 

@@ -70,10 +70,18 @@ class PostgresAdapter extends BaseAdapter {
         slug TEXT UNIQUE NOT NULL,
         mime_type TEXT NOT NULL,
         size INTEGER NOT NULL,
+        storage_backend TEXT NOT NULL DEFAULT 'file',
         file_hash TEXT,
         comment TEXT,
         tags TEXT,
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS image_blobs (
+        image_id INTEGER PRIMARY KEY REFERENCES images(id) ON DELETE CASCADE,
+        blob_data BYTEA NOT NULL,
+        blob_size INTEGER NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
@@ -134,12 +142,55 @@ class PostgresAdapter extends BaseAdapter {
     await client.query('ALTER TABLE images ADD COLUMN IF NOT EXISTS comment TEXT');
     await client.query('ALTER TABLE images ADD COLUMN IF NOT EXISTS tags TEXT');
     await client.query('ALTER TABLE images ADD COLUMN IF NOT EXISTS file_hash TEXT');
+    await client.query("ALTER TABLE images ADD COLUMN IF NOT EXISTS storage_backend TEXT NOT NULL DEFAULT 'file'");
+    await client.query("ALTER TABLE images ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'public'");
+    await client.query('ALTER TABLE images ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ');
+    await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS storage_quota_bytes BIGINT NOT NULL DEFAULT 0');
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique
       ON users (LOWER(email))
       WHERE email IS NOT NULL AND email <> ''
     `);
     await client.query('CREATE INDEX IF NOT EXISTS idx_images_file_hash ON images(file_hash)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_images_storage_backend ON images(storage_backend)');
+
+    // ── New tables for thumbnails, albums, TOTP ─────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS image_thumbnails (
+        image_id INTEGER PRIMARY KEY REFERENCES images(id) ON DELETE CASCADE,
+        thumb_data BYTEA NOT NULL,
+        thumb_size INTEGER NOT NULL,
+        width INTEGER NOT NULL DEFAULT 0,
+        height INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS albums (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS album_images (
+        album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+        image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (album_id, image_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS totp_secrets (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        secret TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_albums_user ON albums(user_id);
+      CREATE INDEX IF NOT EXISTS idx_album_images_album ON album_images(album_id);
+      CREATE INDEX IF NOT EXISTS idx_images_expires ON images(expires_at);
+    `);
   }
 
   async close() {
@@ -258,13 +309,31 @@ class PostgresAdapter extends BaseAdapter {
 
   // ── Image helpers ─────────────────────────────────────────────────────────
 
-  async createImage({ filename, originalName, slug, mimeType, size, userId, comment = null, tags = null, fileHash = null }) {
+  async createImage({ filename, originalName, slug, mimeType, size, userId, comment = null, tags = null, fileHash = null, storageBackend = 'file', visibility = 'public', expiresAt = null }) {
     const row = await this._queryOne(
-      `INSERT INTO images (filename, original_name, slug, mime_type, size, file_hash, comment, tags, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-      [filename, originalName, slug, mimeType, size, fileHash, comment, tags, userId]
+      `INSERT INTO images (filename, original_name, slug, mime_type, size, storage_backend, file_hash, comment, tags, user_id, visibility, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+      [filename, originalName, slug, mimeType, size, storageBackend, fileHash, comment, tags, userId, visibility, expiresAt]
     );
     return row.id;
+  }
+
+  async upsertImageBlob(imageId, blobData) {
+    await this.pool.query(
+      `INSERT INTO image_blobs (image_id, blob_data, blob_size)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (image_id) DO UPDATE
+         SET blob_data = EXCLUDED.blob_data,
+             blob_size = EXCLUDED.blob_size`,
+      [imageId, blobData, blobData.length]
+    );
+  }
+
+  async getImageBlobByImageId(imageId) {
+    return this._queryOne(
+      'SELECT image_id, blob_data, blob_size, created_at FROM image_blobs WHERE image_id = $1',
+      [imageId]
+    );
   }
 
   async getImageBySlug(slug) {
@@ -451,8 +520,9 @@ class PostgresAdapter extends BaseAdapter {
     const users = await this._queryAll('SELECT * FROM users ORDER BY id');
     const images = await this._queryAll('SELECT * FROM images ORDER BY id');
     const imageViews = await this._queryAll('SELECT * FROM image_views ORDER BY id');
+    const imageBlobs = await this._queryAll('SELECT * FROM image_blobs ORDER BY image_id');
     const apiTokens = await this._queryAll('SELECT * FROM api_tokens ORDER BY id');
-    return { users, images, image_views: imageViews, api_tokens: apiTokens };
+    return { users, images, image_views: imageViews, image_blobs: imageBlobs, api_tokens: apiTokens };
   }
 
   async importData(data) {
@@ -463,6 +533,7 @@ class PostgresAdapter extends BaseAdapter {
       // Clear existing data
       await client.query('DELETE FROM api_tokens');
       await client.query('DELETE FROM image_views');
+      await client.query('DELETE FROM image_blobs');
       await client.query('DELETE FROM images');
       await client.query('DELETE FROM users');
 
@@ -483,10 +554,11 @@ class PostgresAdapter extends BaseAdapter {
       // Import images
       for (const img of data.images) {
         await client.query(
-          `INSERT INTO images (id, filename, original_name, slug, mime_type, size, comment, tags, user_id, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          `INSERT INTO images (id, filename, original_name, slug, mime_type, size, storage_backend, file_hash, comment, tags, user_id, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
           [img.id, img.filename, img.original_name, img.slug,
-           img.mime_type, img.size, img.comment || null, img.tags || null, img.user_id, img.created_at]
+           img.mime_type, img.size, img.storage_backend || 'file', img.file_hash || null,
+           img.comment || null, img.tags || null, img.user_id, img.created_at]
         );
       }
       if (data.images.length > 0) {
@@ -505,6 +577,14 @@ class PostgresAdapter extends BaseAdapter {
       if (data.image_views.length > 0) {
         const maxId = Math.max(...data.image_views.map(v => v.id));
         await client.query(`SELECT setval('image_views_id_seq', $1)`, [maxId]);
+      }
+
+      for (const b of (data.image_blobs || [])) {
+        await client.query(
+          `INSERT INTO image_blobs (image_id, blob_data, blob_size, created_at)
+           VALUES ($1, $2, $3, $4)`,
+          [b.image_id, b.blob_data, b.blob_size, b.created_at]
+        );
       }
 
       for (const t of (data.api_tokens || [])) {
@@ -630,6 +710,199 @@ class PostgresAdapter extends BaseAdapter {
     if (!flag) return null;
     const resolutions = await this.getFlagResolutions(flagId);
     return { ...flag, resolutions };
+  }
+
+  // ── Thumbnail helpers ─────────────────────────────────────────────────────
+
+  async upsertImageThumbnail(imageId, thumbData, width, height) {
+    await this.pool.query(
+      `INSERT INTO image_thumbnails (image_id, thumb_data, thumb_size, width, height)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (image_id) DO UPDATE SET
+         thumb_data = EXCLUDED.thumb_data,
+         thumb_size = EXCLUDED.thumb_size,
+         width = EXCLUDED.width,
+         height = EXCLUDED.height`,
+      [imageId, thumbData, thumbData.length, width, height]
+    );
+  }
+
+  async getImageThumbnail(imageId) {
+    return this._queryOne(
+      'SELECT image_id, thumb_data, thumb_size, width, height FROM image_thumbnails WHERE image_id = $1',
+      [imageId]
+    );
+  }
+
+  // ── Album helpers ─────────────────────────────────────────────────────────
+
+  async createAlbum({ name, description = null, userId }) {
+    const row = await this._queryOne(
+      'INSERT INTO albums (name, description, user_id) VALUES ($1, $2, $3) RETURNING id',
+      [name, description, userId]
+    );
+    return row.id;
+  }
+
+  async getAlbumById(id) {
+    return this._queryOne('SELECT * FROM albums WHERE id = $1', [id]);
+  }
+
+  async listAlbumsByUser(userId) {
+    return this._queryAll(
+      `SELECT a.*, COUNT(ai.image_id)::int AS image_count
+       FROM albums a
+       LEFT JOIN album_images ai ON ai.album_id = a.id
+       WHERE a.user_id = $1
+       GROUP BY a.id
+       ORDER BY a.created_at DESC`,
+      [userId]
+    );
+  }
+
+  async updateAlbum(id, { name, description }) {
+    await this.pool.query(
+      'UPDATE albums SET name = $1, description = $2 WHERE id = $3',
+      [name, description || null, id]
+    );
+  }
+
+  async deleteAlbum(id) {
+    await this.pool.query('DELETE FROM albums WHERE id = $1', [id]);
+  }
+
+  async addImagesToAlbum(albumId, imageIds) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (let i = 0; i < imageIds.length; i++) {
+        await client.query(
+          `INSERT INTO album_images (album_id, image_id, sort_order)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (album_id, image_id) DO NOTHING`,
+          [albumId, imageIds[i], i]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async removeImageFromAlbum(albumId, imageId) {
+    await this.pool.query(
+      'DELETE FROM album_images WHERE album_id = $1 AND image_id = $2',
+      [albumId, imageId]
+    );
+  }
+
+  async getAlbumImages(albumId) {
+    return this._queryAll(
+      `SELECT i.*, ai.sort_order, COUNT(v.id)::int AS view_count
+       FROM album_images ai
+       JOIN images i ON i.id = ai.image_id
+       LEFT JOIN image_views v ON v.image_id = i.id
+       WHERE ai.album_id = $1
+       GROUP BY i.id, ai.sort_order
+       ORDER BY ai.sort_order`,
+      [albumId]
+    );
+  }
+
+  // ── Visibility helpers ────────────────────────────────────────────────────
+
+  async updateImageVisibility(imageId, visibility) {
+    await this.pool.query(
+      'UPDATE images SET visibility = $1 WHERE id = $2',
+      [visibility, imageId]
+    );
+  }
+
+  // ── Expiration helpers ────────────────────────────────────────────────────
+
+  async getExpiredImages() {
+    return this._queryAll(
+      `SELECT * FROM images
+       WHERE expires_at IS NOT NULL
+         AND expires_at <= NOW()`
+    );
+  }
+
+  async updateImageExpiration(imageId, expiresAt) {
+    await this.pool.query(
+      'UPDATE images SET expires_at = $1 WHERE id = $2',
+      [expiresAt, imageId]
+    );
+  }
+
+  // ── Quota helpers ─────────────────────────────────────────────────────────
+
+  async getUserStorageUsed(userId) {
+    const row = await this._queryOne(
+      'SELECT COALESCE(SUM(size), 0)::bigint AS used FROM images WHERE user_id = $1',
+      [userId]
+    );
+    return Number(row.used);
+  }
+
+  async getUserStorageQuota(userId) {
+    const row = await this._queryOne(
+      'SELECT storage_quota_bytes FROM users WHERE id = $1',
+      [userId]
+    );
+    return row ? Number(row.storage_quota_bytes) : 0;
+  }
+
+  async setUserStorageQuota(userId, quotaBytes) {
+    await this.pool.query(
+      'UPDATE users SET storage_quota_bytes = $1 WHERE id = $2',
+      [quotaBytes, userId]
+    );
+  }
+
+  // ── TOTP helpers ──────────────────────────────────────────────────────────
+
+  async saveTotpSecret(userId, secret) {
+    await this.pool.query(
+      `INSERT INTO totp_secrets (user_id, secret, enabled)
+       VALUES ($1, $2, 0)
+       ON CONFLICT (user_id) DO UPDATE SET
+         secret = EXCLUDED.secret,
+         enabled = 0`,
+      [userId, secret]
+    );
+  }
+
+  async enableTotp(userId) {
+    await this.pool.query(
+      'UPDATE totp_secrets SET enabled = 1 WHERE user_id = $1',
+      [userId]
+    );
+  }
+
+  async disableTotp(userId) {
+    await this.pool.query(
+      'DELETE FROM totp_secrets WHERE user_id = $1',
+      [userId]
+    );
+  }
+
+  async getTotpSecret(userId) {
+    return this._queryOne(
+      'SELECT * FROM totp_secrets WHERE user_id = $1',
+      [userId]
+    );
+  }
+
+  async isTotpEnabled(userId) {
+    const row = await this._queryOne(
+      'SELECT enabled FROM totp_secrets WHERE user_id = $1',
+      [userId]
+    );
+    return row ? row.enabled === 1 : false;
   }
 }
 

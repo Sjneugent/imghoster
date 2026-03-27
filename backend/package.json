@@ -18,7 +18,10 @@
     "db:status": "node scripts/db-migrate.js --status",
     "db:export": "node scripts/db-replicate.js --export",
     "db:import": "node scripts/db-replicate.js --import",
-    "db:replicate": "node scripts/db-replicate.js --migrate"
+    "db:replicate": "node scripts/db-replicate.js --migrate",
+    "db:to-blobs": "node scripts/storage-migrate-to-blobs.js",
+    "db:verify-blobs": "node scripts/storage-migrate-to-blobs.js --verify-only",
+    "db:clear-blob-checkpoint": "node scripts/storage-migrate-to-blobs.js --clear-checkpoint"
   },
   "dependencies": {
     "@hapi/bourne": "^3.0.0",
@@ -31,6 +34,8 @@
     "express-session-better-sqlite3": "^1.2.1",
     "helmet": "^7.1.0",
     "multer": "^2.1.1",
+    "otpauth": "^9.5.0",
+    "qrcode": "^1.5.4",
     "sharp": "^0.34.5",
     "uuid": "^10.0.0",
     "yazl": "^3.3.1"

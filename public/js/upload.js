@@ -125,6 +125,40 @@ import { validateFileBeforeUpload } from './hash-utils.js';
     }
   });
 
+  // ── Clipboard paste support ──────────────────────────────────────────────
+  document.addEventListener('paste', (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles = [];
+    for (const item of items) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const f = item.getAsFile();
+        if (f) imageFiles.push(f);
+      }
+    }
+    if (imageFiles.length) {
+      e.preventDefault();
+      setSelectedFiles(imageFiles);
+      onFilesSelected(fileInput.files);
+    }
+  });
+
+  // ── Expiration custom date toggle ──────────────────────────────────────────
+  const expiresSelect = document.getElementById('expires-at');
+  const expiresCustom = document.getElementById('expires-at-custom');
+  expiresSelect.addEventListener('change', () => {
+    expiresCustom.style.display = expiresSelect.value === 'custom' ? 'block' : 'none';
+  });
+
+  function computeExpiresAt() {
+    const val = expiresSelect.value;
+    if (!val) return null;
+    if (val === 'custom') return expiresCustom.value ? new Date(expiresCustom.value).toISOString() : null;
+    const now = Date.now();
+    const map = { '1h': 3600000, '24h': 86400000, '7d': 604800000, '30d': 2592000000 };
+    return map[val] ? new Date(now + map[val]).toISOString() : null;
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     App.hideAlert(alertEl);
@@ -159,7 +193,7 @@ import { validateFileBeforeUpload } from './hash-utils.js';
             App.showAlert(alertEl, msg);
           }
           uploadBtn.disabled = false;
-          uploadBtn.innerHTML = '\u2b06\ufe0f Upload';
+          uploadBtn.innerHTML = 'Upload';
           return;
         }
       }
@@ -176,6 +210,9 @@ import { validateFileBeforeUpload } from './hash-utils.js';
       if (tags) fd.append('tags', tags);
       if (fileHash) fd.append('fileHash', fileHash);
       fd.append('compress', document.getElementById('compress-image').checked ? 'true' : 'false');
+      fd.append('visibility', document.getElementById('visibility').value);
+      const expiresAt = computeExpiresAt();
+      if (expiresAt) fd.append('expiresAt', expiresAt);
 
       const res = await fetch('/api/images/upload', {
         method: 'POST',
@@ -208,13 +245,13 @@ import { validateFileBeforeUpload } from './hash-utils.js';
       resultUrl.textContent = lines.join('\n');
       resultUrl.style.whiteSpace = 'pre-wrap';
       viewLink.href = uploaded[0].url;
-      viewLink.textContent = uploaded.length > 1 ? 'Open first image ↗' : 'Open image ↗';
+      viewLink.textContent = uploaded.length > 1 ? 'Open first image' : 'Open image';
       resultEl.style.display = 'block';
       form.style.display = 'none';
     } catch (err) {
       App.showAlert(alertEl, err.message);
       uploadBtn.disabled = false;
-      uploadBtn.innerHTML = '\u2b06\ufe0f Upload';
+      uploadBtn.innerHTML = 'Upload';
     }
   });
 
@@ -232,6 +269,6 @@ import { validateFileBeforeUpload } from './hash-utils.js';
     }
     slugInput.disabled = false;
     uploadBtn.disabled = true;
-    uploadBtn.innerHTML = '\u2b06\ufe0f Upload';
+    uploadBtn.innerHTML = 'Upload';
   });
 })();

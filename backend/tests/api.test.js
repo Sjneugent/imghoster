@@ -12,11 +12,22 @@ import http from 'node:http';
 const TEST_DB = '/tmp/imghoster_test.db';
 const TEST_UPLOADS = '/tmp/imghoster_test_uploads';
 
+function clearDirectory(dirPath) {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+    return;
+  }
+
+  for (const entry of fs.readdirSync(dirPath)) {
+    fs.rmSync(`${dirPath}/${entry}`, { recursive: true, force: true });
+  }
+}
+
 // Clean up before run
 if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB);
 if (fs.existsSync(TEST_DB + '-wal')) fs.unlinkSync(TEST_DB + '-wal');
 if (fs.existsSync(TEST_DB + '-shm')) fs.unlinkSync(TEST_DB + '-shm');
-if (!fs.existsSync(TEST_UPLOADS)) fs.mkdirSync(TEST_UPLOADS, { recursive: true });
+clearDirectory(TEST_UPLOADS);
 
 process.env.DB_PATH = TEST_DB;
 process.env.SESSION_SECRET = 'test-session-secret-123';
@@ -161,6 +172,204 @@ describe('Database helpers', () => {
     assert.equal(results.length, 0);
   });
 
+  test('db blob storage – persists and retrieves bytes by slug/image id', async () => {
+    const userId = (await db.getUserByUsername('testuser')).id;
+    const blobSlug = 'blob-sample';
+    const blobBytes = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A]);
+
+    const imgId = await db.createImage({
+      filename: 'blob-sample.png',
+      originalName: 'blob-sample.png',
+      slug: blobSlug,
+      mimeType: 'image/png',
+      size: blobBytes.length,
+      storageBackend: 'db_blob',
+      userId,
+    });
+
+    await db.upsertImageBlob(imgId, blobBytes);
+
+    const bySlug = await db.getImageBySlug(blobSlug);
+    assert.equal(bySlug.storage_backend, 'db_blob');
+
+    const blobRow = await db.getImageBlobByImageId(imgId);
+    assert.ok(blobRow, 'blob row should exist');
+    assert.equal(blobRow.blob_size, blobBytes.length);
+    assert.equal(Buffer.compare(blobRow.blob_data, blobBytes), 0);
+  });
+
+  test('db blob storage – duplicate hash lookup remains queryable', async () => {
+    const userId = (await db.getUserByUsername('testuser')).id;
+    const hashValue = 'hash-for-blob-record-001';
+    const imgId = await db.createImage({
+      filename: 'blob-hash-test.jpg',
+      originalName: 'blob-hash-test.jpg',
+      slug: 'blob-hash-test',
+      mimeType: 'image/jpeg',
+      size: 12,
+      storageBackend: 'db_blob',
+      fileHash: hashValue,
+      userId,
+    });
+    await db.upsertImageBlob(imgId, Buffer.from('hello-blob'));
+
+    const dup = await db.checkDuplicateHash(hashValue);
+    assert.ok(dup, 'hash lookup should find the record');
+    assert.equal(dup.slug, 'blob-hash-test');
+  });
+
+  test('file->blob migration script preserves bytes and updates storage backend', async () => {
+    const { migrateFileStorageToBlobs } = await import('../scripts/storage-migrate-to-blobs.js');
+    const userId = (await db.getUserByUsername('testuser')).id;
+    const checkpointPath = '/tmp/imghoster_blob_checkpoint_case1.json';
+    if (fs.existsSync(checkpointPath)) fs.unlinkSync(checkpointPath);
+
+    const legacyBytes = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5K3A8AAAAASUVORK5CYII=',
+      'base64'
+    );
+
+    const legacyFilename = 'legacy-migration-check.png';
+    const legacySlug = 'legacy-migration-check';
+    const legacyPath = `${TEST_UPLOADS}/${legacyFilename}`;
+    fs.writeFileSync(legacyPath, legacyBytes);
+
+    const legacyId = await db.createImage({
+      filename: legacyFilename,
+      originalName: 'legacy-upload.png',
+      slug: legacySlug,
+      mimeType: 'image/png',
+      size: legacyBytes.length,
+      storageBackend: 'file',
+      userId,
+    });
+
+    const summary = await migrateFileStorageToBlobs({
+      dbPath: TEST_DB,
+      uploadsDir: TEST_UPLOADS,
+      checkpointPath,
+      resume: false,
+      verify: true,
+      verifyOnly: false,
+      dryRun: false,
+      deleteFiles: false,
+      closeWhenDone: false,
+      log: () => {},
+    });
+
+    assert.ok(summary.migrated >= 1, 'at least one file-backed image should migrate');
+    assert.ok(summary.verified >= 1, 'at least one migrated image should verify');
+    assert.ok(summary.migratedIds.includes(legacyId), 'legacy image should be included in migration ids');
+
+    const migratedRow = await db.getImageBySlug(legacySlug);
+    assert.equal(migratedRow.storage_backend, 'db_blob');
+
+    const blobRow = await db.getImageBlobByImageId(legacyId);
+    assert.ok(blobRow, 'blob row should exist after migration');
+    assert.equal(Buffer.compare(Buffer.from(blobRow.blob_data), legacyBytes), 0);
+
+    // Legacy file remains because deleteFiles=false
+    assert.equal(fs.existsSync(legacyPath), true);
+  });
+
+  test('file->blob migration verify-only detects parity without rewriting data', async () => {
+    const { migrateFileStorageToBlobs } = await import('../scripts/storage-migrate-to-blobs.js');
+    const checkpointPath = '/tmp/imghoster_blob_checkpoint_case2.json';
+    if (fs.existsSync(checkpointPath)) fs.unlinkSync(checkpointPath);
+    const summary = await migrateFileStorageToBlobs({
+      dbPath: TEST_DB,
+      uploadsDir: TEST_UPLOADS,
+      checkpointPath,
+      resume: false,
+      verify: true,
+      verifyOnly: true,
+      dryRun: false,
+      deleteFiles: false,
+      closeWhenDone: false,
+      log: () => {},
+    });
+
+    assert.equal(summary.migrated, 0);
+    assert.ok(summary.verified >= 1, 'verify-only should still compare file bytes to blob bytes');
+    assert.equal(summary.failures, 0);
+  });
+
+  test('file->blob migration supports checkpoint resume across runs', async () => {
+    const { migrateFileStorageToBlobs } = await import('../scripts/storage-migrate-to-blobs.js');
+    const userId = (await db.getUserByUsername('testuser')).id;
+    const checkpointPath = '/tmp/imghoster_blob_checkpoint_test.json';
+    if (fs.existsSync(checkpointPath)) fs.unlinkSync(checkpointPath);
+
+    const bytesA = Buffer.from([0x01, 0x02, 0x03, 0x04]);
+    const bytesB = Buffer.from([0x05, 0x06, 0x07, 0x08]);
+    const fileA = 'resume-a.bin';
+    const fileB = 'resume-b.bin';
+    fs.writeFileSync(`${TEST_UPLOADS}/${fileA}`, bytesA);
+    fs.writeFileSync(`${TEST_UPLOADS}/${fileB}`, bytesB);
+
+    const idA = await db.createImage({
+      filename: fileA,
+      originalName: fileA,
+      slug: 'resume-a',
+      mimeType: 'image/png',
+      size: bytesA.length,
+      storageBackend: 'file',
+      userId,
+    });
+    const idB = await db.createImage({
+      filename: fileB,
+      originalName: fileB,
+      slug: 'resume-b',
+      mimeType: 'image/png',
+      size: bytesB.length,
+      storageBackend: 'file',
+      userId,
+    });
+
+    const firstRun = await migrateFileStorageToBlobs({
+      dbPath: TEST_DB,
+      uploadsDir: TEST_UPLOADS,
+      checkpointPath,
+      verify: true,
+      verifyOnly: false,
+      dryRun: false,
+      deleteFiles: false,
+      maxMigrations: 1,
+      closeWhenDone: false,
+      log: () => {},
+    });
+
+    assert.equal(firstRun.migrated, 1, 'first run should process exactly one image');
+    assert.equal(fs.existsSync(checkpointPath), true, 'checkpoint file should be created');
+
+    const checkpointAfterFirst = JSON.parse(fs.readFileSync(checkpointPath, 'utf8'));
+    assert.ok(checkpointAfterFirst.lastMigratedImageId > 0);
+
+    const secondRun = await migrateFileStorageToBlobs({
+      dbPath: TEST_DB,
+      uploadsDir: TEST_UPLOADS,
+      checkpointPath,
+      verify: true,
+      verifyOnly: false,
+      dryRun: false,
+      deleteFiles: false,
+      closeWhenDone: false,
+      log: () => {},
+    });
+
+    assert.ok(secondRun.migrated >= 1, 'second run should continue from checkpoint');
+
+    const rowA = await db.getImageBySlug('resume-a');
+    const rowB = await db.getImageBySlug('resume-b');
+    assert.equal(rowA.storage_backend, 'db_blob');
+    assert.equal(rowB.storage_backend, 'db_blob');
+
+    const blobA = await db.getImageBlobByImageId(idA);
+    const blobB = await db.getImageBlobByImageId(idB);
+    assert.equal(Buffer.compare(Buffer.from(blobA.blob_data), bytesA), 0);
+    assert.equal(Buffer.compare(Buffer.from(blobB.blob_data), bytesB), 0);
+  });
+
   test('exportData / importData round-trip', async () => {
     const exported = await db.exportData();
     assert.ok(exported.users.length >= 1, 'should have at least one user');
@@ -173,18 +382,159 @@ describe('Database helpers', () => {
     assert.equal(afterImport.users.length, exported.users.length);
     assert.equal(afterImport.images.length, exported.images.length);
   });
+
+  // ── Thumbnail tests ───────────────────────────────────────────────────────
+  test('upsertImageThumbnail / getImageThumbnail', async () => {
+    const img = await db.getImageBySlug('my-photo');
+    const thumbData = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10]);
+    await db.upsertImageThumbnail(img.id, thumbData, 300, 300);
+
+    const thumb = await db.getImageThumbnail(img.id);
+    assert.ok(thumb, 'thumbnail should exist');
+    assert.equal(Buffer.compare(Buffer.from(thumb.thumb_data), thumbData), 0);
+    assert.equal(thumb.width, 300);
+    assert.equal(thumb.height, 300);
+  });
+
+  test('getImageThumbnail – returns null for non-existent', async () => {
+    const thumb = await db.getImageThumbnail(999999);
+    assert.equal(thumb, undefined);
+  });
+
+  // ── Album tests ───────────────────────────────────────────────────────────
+  test('createAlbum / getAlbumById / listAlbumsByUser', async () => {
+    const userId = (await db.getUserByUsername('testuser')).id;
+    const albumId = await db.createAlbum({ name: 'Test Album', description: 'A test album', userId });
+    assert.ok(albumId > 0);
+
+    const album = await db.getAlbumById(albumId);
+    assert.equal(album.name, 'Test Album');
+    assert.equal(album.description, 'A test album');
+    assert.equal(album.user_id, userId);
+
+    const albums = await db.listAlbumsByUser(userId);
+    assert.ok(albums.length >= 1);
+    assert.ok(albums.some(a => a.id === albumId));
+  });
+
+  test('updateAlbum', async () => {
+    const userId = (await db.getUserByUsername('testuser')).id;
+    const albums = await db.listAlbumsByUser(userId);
+    const album = albums[0];
+    await db.updateAlbum(album.id, { name: 'Renamed Album' });
+    const updated = await db.getAlbumById(album.id);
+    assert.equal(updated.name, 'Renamed Album');
+  });
+
+  test('addImagesToAlbum / getAlbumImages / removeImageFromAlbum', async () => {
+    const userId = (await db.getUserByUsername('testuser')).id;
+    const albums = await db.listAlbumsByUser(userId);
+    const albumId = albums[0].id;
+    const img = await db.getImageBySlug('my-photo');
+
+    await db.addImagesToAlbum(albumId, [img.id]);
+    const images = await db.getAlbumImages(albumId);
+    assert.ok(images.length >= 1);
+    assert.ok(images.some(i => i.id === img.id));
+
+    await db.removeImageFromAlbum(albumId, img.id);
+    const afterRemove = await db.getAlbumImages(albumId);
+    assert.ok(!afterRemove.some(i => i.id === img.id));
+  });
+
+  test('deleteAlbum', async () => {
+    const userId = (await db.getUserByUsername('testuser')).id;
+    const albumId = await db.createAlbum({ name: 'To Delete', description: null, userId });
+    await db.deleteAlbum(albumId);
+    const gone = await db.getAlbumById(albumId);
+    assert.equal(gone, undefined);
+  });
+
+  // ── Visibility tests ──────────────────────────────────────────────────────
+  test('updateImageVisibility', async () => {
+    const img = await db.getImageBySlug('my-photo');
+    await db.updateImageVisibility(img.id, 'unlisted');
+    const updated = await db.getImageBySlug('my-photo');
+    assert.equal(updated.visibility, 'unlisted');
+
+    // Reset back to public
+    await db.updateImageVisibility(img.id, 'public');
+  });
+
+  // ── Expiration tests ──────────────────────────────────────────────────────
+  test('updateImageExpiration / getExpiredImages', async () => {
+    const userId = (await db.getUserByUsername('testuser')).id;
+    const imgId = await db.createImage({
+      filename: 'expiring.png',
+      originalName: 'expiring.png',
+      slug: 'expiring-test',
+      mimeType: 'image/png',
+      size: 100,
+      userId,
+    });
+
+    // Set expiration to the past
+    const pastDate = new Date(Date.now() - 60000).toISOString();
+    await db.updateImageExpiration(imgId, pastDate);
+
+    const expired = await db.getExpiredImages();
+    assert.ok(expired.some(i => i.id === imgId), 'expired list should include the image');
+
+    // Clean up
+    await db.deleteImage(imgId);
+  });
+
+  // ── Storage quota tests ───────────────────────────────────────────────────
+  test('setUserStorageQuota / getUserStorageQuota / getUserStorageUsed', async () => {
+    const userId = (await db.getUserByUsername('testuser')).id;
+
+    await db.setUserStorageQuota(userId, 1048576); // 1 MB
+    const quota = await db.getUserStorageQuota(userId);
+    assert.equal(quota, 1048576);
+
+    const used = await db.getUserStorageUsed(userId);
+    assert.equal(typeof used, 'number');
+    assert.ok(used >= 0);
+
+    // Reset quota to 0 (unlimited)
+    await db.setUserStorageQuota(userId, 0);
+  });
+
+  // ── TOTP tests ────────────────────────────────────────────────────────────
+  test('saveTotpSecret / getTotpSecret / enableTotp / isTotpEnabled / disableTotp', async () => {
+    const userId = (await db.getUserByUsername('testuser')).id;
+
+    // Initially not enabled
+    assert.equal(await db.isTotpEnabled(userId), false);
+
+    // Save secret
+    await db.saveTotpSecret(userId, 'JBSWY3DPEHPK3PXP');
+    const secretRow = await db.getTotpSecret(userId);
+    assert.equal(secretRow.secret, 'JBSWY3DPEHPK3PXP');
+
+    // Enable TOTP
+    await db.enableTotp(userId);
+    assert.equal(await db.isTotpEnabled(userId), true);
+
+    // Disable TOTP
+    await db.disableTotp(userId);
+    assert.equal(await db.isTotpEnabled(userId), false);
+  });
 });
 
 // ── HTTP integration tests ────────────────────────────────────────────────────
 describe('HTTP API', () => {
   let app, server, baseUrl, adminId;
   let createdApiToken = '';
+  const originalStorageMode = process.env.IMAGE_STORAGE_MODE;
 
   before(async () => {
     // Create a second test DB for HTTP tests to avoid cross-contamination
     const HTTP_DB = '/tmp/imghoster_http_test.db';
     if (fs.existsSync(HTTP_DB)) fs.unlinkSync(HTTP_DB);
+    clearDirectory(TEST_UPLOADS);
     process.env.DB_PATH = HTTP_DB;
+    process.env.IMAGE_STORAGE_MODE = 'blob';
 
     const dbHttp = await import('../db/index.js');
     await dbHttp.initDB(HTTP_DB);
@@ -208,6 +558,11 @@ describe('HTTP API', () => {
 
   after(() => {
     if (server) server.close();
+    if (originalStorageMode === undefined) {
+      delete process.env.IMAGE_STORAGE_MODE;
+    } else {
+      process.env.IMAGE_STORAGE_MODE = originalStorageMode;
+    }
   });
 
   // Helper: perform a request and return { status, body, headers, cookies }
@@ -512,17 +867,20 @@ describe('HTTP API', () => {
   }
 
   test('POST /api/images/upload – localhost without auth can upload', async () => {
-    // Create a minimal valid JPEG (smallest valid JPEG is ~107 bytes)
-    const jpegHeader = Buffer.from([
-      0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
-      0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
-    ]);
+    const tinyPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5K3A8AAAAASUVORK5CYII=',
+      'base64'
+    );
+    const uploadArtifactsBefore = fs.readdirSync(TEST_UPLOADS).filter((name) => !name.startsWith('.'));
 
-    const r = await uploadRequest('/api/images/upload', 'test.jpg', jpegHeader, 'image/jpeg');
+    const r = await uploadRequest('/api/images/upload', 'test.png', tinyPng, 'image/png');
     assert.equal(r.status, 201, `Expected 201 but got ${r.status}: ${JSON.stringify(r.body)}`);
     assert.ok(r.body.id, 'should return image id');
     assert.ok(r.body.slug, 'should return slug');
     assert.ok(r.body.url, 'should return url');
+
+    const uploadArtifactsAfter = fs.readdirSync(TEST_UPLOADS).filter((name) => !name.startsWith('.'));
+    assert.equal(uploadArtifactsAfter.length, uploadArtifactsBefore.length, 'blob mode should not leave image files in uploads directory');
   });
 
   test('POST /api/images/upload – accepts compress flag', async () => {
@@ -545,14 +903,11 @@ describe('HTTP API', () => {
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5K3A8AAAAASUVORK5CYII=',
       'base64'
     );
-    const jpegHeader = Buffer.from([
-      0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
-      0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
-    ]);
+    const tinyGif = Buffer.from('R0lGODlhAQABAIABAP///wAAACwAAAAAAQABAAACAkQBADs=', 'base64');
 
     const r = await uploadRequestMulti('/api/images/upload', [
       { filename: 'multi-1.png', content: tinyPng, mimeType: 'image/png' },
-      { filename: 'multi-2.jpg', content: jpegHeader, mimeType: 'image/jpeg' },
+      { filename: 'multi-2.gif', content: tinyGif, mimeType: 'image/gif' },
     ]);
 
     assert.equal(r.status, 201, `Expected 201 but got ${r.status}: ${JSON.stringify(r.body)}`);
@@ -565,16 +920,13 @@ describe('HTTP API', () => {
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5K3A8AAAAASUVORK5CYII=',
       'base64'
     );
-    const jpegHeader = Buffer.from([
-      0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
-      0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
-    ]);
-    const webpStub = Buffer.from('RIFF0000WEBPVP8 ', 'ascii');
+    const tinyGif = Buffer.from('R0lGODlhAQABAIABAP///wAAACwAAAAAAQABAAACAkQBADs=', 'base64');
+    const tinySvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect width="1" height="1"/></svg>');
 
     const r = await uploadRequestMulti('/api/images/upload', [
-      { filename: 'mixed-1.jpg', content: jpegHeader, mimeType: 'image/jpeg' },
+      { filename: 'mixed-1.gif', content: tinyGif, mimeType: 'image/gif' },
       { filename: 'mixed-2.png', content: tinyPng, mimeType: 'image/png' },
-      { filename: 'mixed-3.webp', content: webpStub, mimeType: 'image/webp' },
+      { filename: 'mixed-3.svg', content: tinySvg, mimeType: 'image/svg+xml' },
     ]);
 
     assert.equal(r.status, 201, `Expected 201 but got ${r.status}: ${JSON.stringify(r.body)}`);
@@ -583,13 +935,54 @@ describe('HTTP API', () => {
     assert.ok(r.body.uploaded.every(item => typeof item.url === 'string' && item.url.includes('/i/')));
   });
 
-  test('POST /api/images/upload – rejects SVG uploads', async () => {
-    const svgPayload = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+  test('POST /api/images/upload – accepts valid SVG uploads', async () => {
+    const svgPayload = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect width="1" height="1"/></svg>');
 
-    const r = await uploadRequest('/api/images/upload', 'xss.svg', svgPayload, 'image/svg+xml');
+    const r = await uploadRequest('/api/images/upload', 'valid.svg', svgPayload, 'image/svg+xml');
+    assert.equal(r.status, 201, `Expected 201 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.ok(r.body.id);
+  });
+
+  test('POST /api/images/upload – rejects corrupt JPEG files', async () => {
+    const bad = Buffer.from([0xFF, 0xD8, 0x00, 0x00, 0x00, 0x00]);
+    const r = await uploadRequest('/api/images/upload', 'bad.jpg', bad, 'image/jpeg');
     assert.equal(r.status, 400, `Expected 400 but got ${r.status}: ${JSON.stringify(r.body)}`);
-    assert.ok(r.body.error);
-    assert.match(String(r.body.error), /only image files are allowed/i);
+    assert.match(String(r.body.error), /invalid image file/i);
+  });
+
+  test('POST /api/images/upload – rejects corrupt PNG files', async () => {
+    const bad = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x00, 0x00, 0x00, 0x00]);
+    const r = await uploadRequest('/api/images/upload', 'bad.png', bad, 'image/png');
+    assert.equal(r.status, 400, `Expected 400 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.match(String(r.body.error), /invalid image file/i);
+  });
+
+  test('POST /api/images/upload – rejects corrupt GIF files', async () => {
+    const bad = Buffer.from('GIF89aBAD', 'ascii');
+    const r = await uploadRequest('/api/images/upload', 'bad.gif', bad, 'image/gif');
+    assert.equal(r.status, 400, `Expected 400 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.match(String(r.body.error), /invalid image file/i);
+  });
+
+  test('POST /api/images/upload – rejects corrupt WebP files', async () => {
+    const bad = Buffer.from('RIFF0000WEBPFAIL', 'ascii');
+    const r = await uploadRequest('/api/images/upload', 'bad.webp', bad, 'image/webp');
+    assert.equal(r.status, 400, `Expected 400 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.match(String(r.body.error), /invalid image file/i);
+  });
+
+  test('POST /api/images/upload – rejects corrupt SVG files', async () => {
+    const bad = Buffer.from('<svg><g></svg', 'utf8');
+    const r = await uploadRequest('/api/images/upload', 'bad.svg', bad, 'image/svg+xml');
+    assert.equal(r.status, 400, `Expected 400 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.match(String(r.body.error), /invalid image file/i);
+  });
+
+  test('POST /api/images/upload – rejects files exceeding per-file size limit', async () => {
+    const oversized = Buffer.alloc((10 * 1024 * 1024) + 1, 0x00);
+    const r = await uploadRequest('/api/images/upload', 'too-large.png', oversized, 'image/png');
+    assert.equal(r.status, 400, `Expected 400 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.match(String(r.body.error), /10 MB or smaller/i);
   });
 
   test('POST /api/images/upload – persists optional comment and tags', async () => {
@@ -755,6 +1148,243 @@ describe('HTTP API', () => {
     });
   });
 
+  // ── Upload with visibility/expiration ─────────────────────────────────────
+  test('POST /api/images/upload – accepts visibility and expiresAt fields', async () => {
+    const tinyPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5K3A8AAAAASUVORK5CYII=',
+      'base64'
+    );
+    const futureDate = new Date(Date.now() + 3600000).toISOString();
+    const r = await uploadRequest('/api/images/upload', 'vis-test.png', tinyPng, 'image/png', {
+      fields: { visibility: 'unlisted', expiresAt: futureDate },
+    });
+    assert.equal(r.status, 201, `Expected 201 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.equal(r.body.visibility, 'unlisted');
+    assert.ok(r.body.expiresAt);
+  });
+
+  // ── Visibility PATCH ──────────────────────────────────────────────────────
+  test('PATCH /api/images/:id/visibility – updates visibility', async () => {
+    const listR = await request('GET', '/api/images');
+    const image = listR.body[0];
+
+    const r = await request('PATCH', `/api/images/${image.id}/visibility`, {
+      body: { visibility: 'private' },
+    });
+    assert.equal(r.status, 200, `Expected 200 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.equal(r.body.visibility, 'private');
+
+    // Reset to public
+    await request('PATCH', `/api/images/${image.id}/visibility`, {
+      body: { visibility: 'public' },
+    });
+  });
+
+  test('PATCH /api/images/:id/visibility – invalid value defaults to public', async () => {
+    const listR = await request('GET', '/api/images');
+    const image = listR.body[0];
+
+    const r = await request('PATCH', `/api/images/${image.id}/visibility`, {
+      body: { visibility: 'invalid-value' },
+    });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.visibility, 'public');
+  });
+
+  // ── Expiration PATCH ──────────────────────────────────────────────────────
+  test('PATCH /api/images/:id/expiration – updates expiration', async () => {
+    const listR = await request('GET', '/api/images');
+    const image = listR.body[0];
+    const futureDate = new Date(Date.now() + 86400000).toISOString();
+
+    const r = await request('PATCH', `/api/images/${image.id}/expiration`, {
+      body: { expiresAt: futureDate },
+    });
+    assert.equal(r.status, 200, `Expected 200 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.ok(r.body.expiresAt);
+
+    // Clear expiration
+    await request('PATCH', `/api/images/${image.id}/expiration`, {
+      body: { expiresAt: null },
+    });
+  });
+
+  // ── Serving private images ────────────────────────────────────────────────
+  test('GET /i/:slug – private image returns 404 for unauthenticated user', async () => {
+    const tinyPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5K3A8AAAAASUVORK5CYII=',
+      'base64'
+    );
+    const r = await uploadRequest('/api/images/upload', 'private-test.png', tinyPng, 'image/png', {
+      fields: { visibility: 'private' },
+    });
+    assert.equal(r.status, 201);
+
+    // Access without session (from localhost, which auto-assigns admin user
+    // but the serve route checks session.userId, so we need to disable bypass)
+    const originalBypass = process.env.LOCALHOST_BYPASS;
+    process.env.LOCALHOST_BYPASS = 'false';
+    try {
+      const serveR = await request('GET', `/i/${r.body.slug}`);
+      assert.equal(serveR.status, 404, 'private image should return 404 without auth');
+    } finally {
+      if (originalBypass === undefined) {
+        delete process.env.LOCALHOST_BYPASS;
+      } else {
+        process.env.LOCALHOST_BYPASS = originalBypass;
+      }
+    }
+  });
+
+  // ── Expired image serving ─────────────────────────────────────────────────
+  test('GET /i/:slug – expired image returns 410', async () => {
+    const tinyPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5K3A8AAAAASUVORK5CYII=',
+      'base64'
+    );
+    // Upload normally first (parseExpiresAt rejects past dates during upload)
+    const r = await uploadRequest('/api/images/upload', 'expired-test.png', tinyPng, 'image/png');
+    assert.equal(r.status, 201);
+
+    // Set expiration to the past via direct DB call
+    const dbHttp = await import('../db/index.js');
+    await dbHttp.updateImageExpiration(r.body.id, new Date(Date.now() - 60000).toISOString());
+
+    const serveR = await request('GET', `/i/${r.body.slug}`);
+    assert.equal(serveR.status, 410, 'expired image should return 410 Gone');
+  });
+
+  // ── Albums API (need session for auth) ────────────────────────────────────
+  let albumSessionCookie = '';
+  test('POST /api/albums – creates album', async () => {
+    // Login to get session cookie for album tests
+    const loginR = await request('POST', '/api/auth/login', {
+      body: { username: 'admin', password: 'AdminPass1!' },
+    });
+    albumSessionCookie = loginR.cookies.map(c => c.split(';')[0]).join('; ');
+
+    const r = await request('POST', '/api/albums', {
+      cookies: albumSessionCookie,
+      body: { name: 'HTTP Test Album', description: 'Created in tests' },
+    });
+    assert.equal(r.status, 201, `Expected 201 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.ok(r.body.id);
+    assert.equal(r.body.name, 'HTTP Test Album');
+  });
+
+  test('GET /api/albums – lists albums', async () => {
+    const r = await request('GET', '/api/albums', { cookies: albumSessionCookie });
+    assert.equal(r.status, 200);
+    assert.ok(Array.isArray(r.body));
+    assert.ok(r.body.length >= 1);
+  });
+
+  test('GET /api/albums/:id – returns album with images', async () => {
+    const listR = await request('GET', '/api/albums', { cookies: albumSessionCookie });
+    const album = listR.body[0];
+
+    const r = await request('GET', `/api/albums/${album.id}`, { cookies: albumSessionCookie });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.name, album.name);
+    assert.ok(Array.isArray(r.body.images));
+  });
+
+  test('POST /api/albums/:id/images – adds images to album', async () => {
+    const listR = await request('GET', '/api/albums', { cookies: albumSessionCookie });
+    const album = listR.body[0];
+    const imagesR = await request('GET', '/api/images');
+    const imageId = imagesR.body[0].id;
+
+    const r = await request('POST', `/api/albums/${album.id}/images`, {
+      cookies: albumSessionCookie,
+      body: { imageIds: [imageId] },
+    });
+    assert.equal(r.status, 200);
+
+    // Verify image was added
+    const albumR = await request('GET', `/api/albums/${album.id}`, { cookies: albumSessionCookie });
+    assert.ok(albumR.body.images.some(i => i.id === imageId));
+  });
+
+  test('DELETE /api/albums/:id/images/:imageId – removes image from album', async () => {
+    const listR = await request('GET', '/api/albums', { cookies: albumSessionCookie });
+    const album = listR.body[0];
+    const albumR = await request('GET', `/api/albums/${album.id}`, { cookies: albumSessionCookie });
+    const imageId = albumR.body.images[0].id;
+
+    const r = await request('DELETE', `/api/albums/${album.id}/images/${imageId}`, { cookies: albumSessionCookie });
+    assert.equal(r.status, 200);
+  });
+
+  test('PATCH /api/albums/:id – updates album', async () => {
+    const listR = await request('GET', '/api/albums', { cookies: albumSessionCookie });
+    const album = listR.body[0];
+
+    const r = await request('PATCH', `/api/albums/${album.id}`, {
+      cookies: albumSessionCookie,
+      body: { name: 'Updated Album Name' },
+    });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.name, 'Updated Album Name');
+  });
+
+  test('DELETE /api/albums/:id – deletes album', async () => {
+    // Create a disposable album to delete
+    const createR = await request('POST', '/api/albums', {
+      cookies: albumSessionCookie,
+      body: { name: 'To Delete' },
+    });
+    assert.equal(createR.status, 201);
+    const r = await request('DELETE', `/api/albums/${createR.body.id}`, { cookies: albumSessionCookie });
+    assert.equal(r.status, 200);
+
+    // Confirm it's gone
+    const getR = await request('GET', `/api/albums/${createR.body.id}`, { cookies: albumSessionCookie });
+    assert.equal(getR.status, 404);
+  });
+
+  test('GET /api/albums/999999 – non-existent album returns 404', async () => {
+    const r = await request('GET', '/api/albums/999999');
+    assert.equal(r.status, 404);
+  });
+
+  // ── Admin quota API ───────────────────────────────────────────────────────
+  test('PATCH /api/admin/users/:id/quota – sets user quota', async () => {
+    const usersR = await request('GET', '/api/admin/users');
+    const userId = usersR.body[0].id;
+
+    const r = await request('PATCH', `/api/admin/users/${userId}/quota`, {
+      body: { quotaBytes: 52428800 }, // 50 MB
+    });
+    assert.equal(r.status, 200, `Expected 200 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.equal(r.body.quotaBytes, 52428800);
+  });
+
+  test('GET /api/admin/users/:id/quota – returns quota info', async () => {
+    const usersR = await request('GET', '/api/admin/users');
+    const userId = usersR.body[0].id;
+
+    const r = await request('GET', `/api/admin/users/${userId}/quota`);
+    assert.equal(r.status, 200);
+    assert.equal(r.body.quotaBytes, 52428800);
+    assert.equal(typeof r.body.usedBytes, 'number');
+  });
+
+  // ── TOTP 2FA API ──────────────────────────────────────────────────────────
+  test('GET /api/auth/totp/status – returns disabled by default', async () => {
+    // Re-use albumSessionCookie which was established from a login earlier
+    const r = await request('GET', '/api/auth/totp/status', { cookies: albumSessionCookie });
+    assert.equal(r.status, 200, `Expected 200 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.equal(r.body.enabled, false);
+  });
+
+  test('POST /api/auth/totp/setup – returns secret and QR code', async () => {
+    const r = await request('POST', '/api/auth/totp/setup', { cookies: albumSessionCookie });
+    assert.equal(r.status, 200, `Expected 200 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.ok(r.body.secret, 'should return secret');
+    assert.ok(r.body.qrDataUrl, 'should return QR code data URI');
+    assert.ok(r.body.uri, 'should return otpauth URL');
+  });
 
 });
 

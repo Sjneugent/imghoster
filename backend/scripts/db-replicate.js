@@ -11,7 +11,7 @@ import PostgresAdapter from '../db/adapters/postgresql.js';
  * Database replication / migration script.
  *
  * Exports data from one database and imports it into another.
- * Supports cross-database-type migration (e.g. SQLite → PostgreSQL).
+ * Supports cross-database-type migration (e.g. SQLite to PostgreSQL).
  *
  * Usage:
  *   node scripts/db-replicate.js --export [output.json]
@@ -74,7 +74,7 @@ async function doExport() {
 
   await adapter.close();
 
-  console.log(`✅ Exported to: ${outPath}`);
+  console.log(`Exported to: ${outPath}`);
   console.log(`   Users: ${data.users.length}`);
   console.log(`   Images: ${data.images.length}`);
   console.log(`   Views: ${data.image_views.length}`);
@@ -87,13 +87,13 @@ async function doImport() {
     process.exit(1);
   }
   if (!fs.existsSync(inPath)) {
-    console.error(`❌ File not found: ${inPath}`);
+    console.error(`File not found: ${inPath}`);
     process.exit(1);
   }
 
   const data = JSON.parse(fs.readFileSync(inPath, 'utf8'));
   if (!data.users || !data.images || !data.image_views) {
-    console.error('❌ Invalid format. Expected { users, images, image_views }.');
+    console.error('Invalid format. Expected { users, images, image_views }.');
     process.exit(1);
   }
 
@@ -107,7 +107,7 @@ async function doImport() {
   await adapter.importData(data);
   await adapter.close();
 
-  console.log(`✅ Imported from: ${inPath}`);
+  console.log(`Imported from: ${inPath}`);
   console.log(`   Users: ${data.users.length}`);
   console.log(`   Images: ${data.images.length}`);
   console.log(`   Views: ${data.image_views.length}`);
@@ -125,11 +125,11 @@ async function doMigrate() {
     : (process.env.DATABASE_URL || DB_PATH);
 
   if (srcType === dstType && srcConfig === dstConfig) {
-    console.error('❌ Source and destination are the same. Set SOURCE_DB_TYPE/SOURCE_DB_PATH.');
+    console.error('Source and destination are the same. Set SOURCE_DB_TYPE/SOURCE_DB_PATH.');
     process.exit(1);
   }
 
-  console.log(`Migrating: ${srcType} → ${dstType}`);
+  console.log(`Migrating: ${srcType} to ${dstType}`);
 
   // Export from source
   const srcAdapter = createAdapter(srcType);
@@ -145,7 +145,7 @@ async function doMigrate() {
   await dstAdapter.importData(data);
   await dstAdapter.close();
 
-  console.log('✅ Migration complete!');
+  console.log('Migration complete.');
   console.log('   Note: uploaded image files are NOT copied. Ensure the uploads/ directory');
   console.log('   is accessible by the new database server.');
 }
@@ -180,7 +180,7 @@ async function doMigrate() {
 
     process.exit(0);
   } catch (err) {
-    console.error('❌ Operation failed:', err.message);
+    console.error('Operation failed:', err.message);
     process.exit(1);
   }
 })();
