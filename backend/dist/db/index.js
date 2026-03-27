@@ -1,0 +1,211 @@
+import SqliteAdapter from './adapters/sqlite.js';
+import PostgresAdapter from './adapters/postgresql.js';
+let adapter = null;
+function getAdapter() {
+    if (!adapter)
+        throw new Error('Database not initialized. Call initDB() first.');
+    return adapter;
+}
+async function initDB(config) {
+    const dbType = (process.env.DB_TYPE || 'sqlite').toLowerCase();
+    switch (dbType) {
+        case 'sqlite':
+            adapter = new SqliteAdapter();
+            break;
+        case 'postgresql':
+        case 'postgres':
+        case 'pg':
+            adapter = new PostgresAdapter();
+            break;
+        default:
+            throw new Error(`Unsupported DB_TYPE: "${dbType}". Supported values: sqlite, postgresql`);
+    }
+    await adapter.init(config);
+    return adapter;
+}
+function getDB() {
+    return getAdapter();
+}
+// ── Proxy functions ─────────────────────────────────────────────────────────
+async function createUser(username, plainPassword, isAdmin, profile) {
+    return getAdapter().createUser(username, plainPassword, isAdmin, profile);
+}
+async function getUserByUsername(username) {
+    return getAdapter().getUserByUsername(username);
+}
+async function getUserByEmail(email) {
+    return getAdapter().getUserByEmail(email);
+}
+async function getUserById(id) {
+    return getAdapter().getUserById(id);
+}
+async function listUsers() {
+    return getAdapter().listUsers();
+}
+async function deleteUser(id) {
+    return getAdapter().deleteUser(id);
+}
+async function updateUserPassword(id, plainPassword) {
+    return getAdapter().updateUserPassword(id, plainPassword);
+}
+async function verifyPassword(plainPassword, hash) {
+    return getAdapter().verifyPassword(plainPassword, hash);
+}
+async function createApiToken(data) {
+    return getAdapter().createApiToken(data);
+}
+async function getActiveApiTokenByHash(tokenHash) {
+    return getAdapter().getActiveApiTokenByHash(tokenHash);
+}
+async function listApiTokensByUser(userId) {
+    return getAdapter().listApiTokensByUser(userId);
+}
+async function revokeApiToken(userId, tokenId) {
+    return getAdapter().revokeApiToken(userId, tokenId);
+}
+async function touchApiTokenUsage(tokenId) {
+    return getAdapter().touchApiTokenUsage(tokenId);
+}
+async function createImage(data) {
+    return getAdapter().createImage(data);
+}
+async function getImageBySlug(slug) {
+    return getAdapter().getImageBySlug(slug);
+}
+async function getImageById(id) {
+    return getAdapter().getImageById(id);
+}
+async function listImagesByUser(userId) {
+    return getAdapter().listImagesByUser(userId);
+}
+async function listAllImages() {
+    return getAdapter().listAllImages();
+}
+async function deleteImage(id) {
+    return getAdapter().deleteImage(id);
+}
+async function slugExists(slug) {
+    return getAdapter().slugExists(slug);
+}
+async function searchImages(query, userId, isAdmin) {
+    return getAdapter().searchImages(query, userId, isAdmin);
+}
+async function getImagesByIds(ids) {
+    return getAdapter().getImagesByIds(ids);
+}
+async function upsertImageBlob(imageId, blobData) {
+    return getAdapter().upsertImageBlob(imageId, blobData);
+}
+async function getImageBlobByImageId(imageId) {
+    return getAdapter().getImageBlobByImageId(imageId);
+}
+async function upsertImageThumbnail(imageId, thumbData, width, height) {
+    return getAdapter().upsertImageThumbnail(imageId, thumbData, width, height);
+}
+async function getImageThumbnail(imageId) {
+    return getAdapter().getImageThumbnail(imageId);
+}
+async function createAlbum(data) {
+    return getAdapter().createAlbum(data);
+}
+async function getAlbumById(id) {
+    return getAdapter().getAlbumById(id);
+}
+async function listAlbumsByUser(userId) {
+    return getAdapter().listAlbumsByUser(userId);
+}
+async function updateAlbum(id, data) {
+    return getAdapter().updateAlbum(id, data);
+}
+async function deleteAlbum(id) {
+    return getAdapter().deleteAlbum(id);
+}
+async function addImagesToAlbum(albumId, imageIds) {
+    return getAdapter().addImagesToAlbum(albumId, imageIds);
+}
+async function removeImageFromAlbum(albumId, imageId) {
+    return getAdapter().removeImageFromAlbum(albumId, imageId);
+}
+async function getAlbumImages(albumId) {
+    return getAdapter().getAlbumImages(albumId);
+}
+async function updateImageVisibility(imageId, visibility) {
+    return getAdapter().updateImageVisibility(imageId, visibility);
+}
+async function getExpiredImages() {
+    return getAdapter().getExpiredImages();
+}
+async function updateImageExpiration(imageId, expiresAt) {
+    return getAdapter().updateImageExpiration(imageId, expiresAt);
+}
+async function getUserStorageUsed(userId) {
+    return getAdapter().getUserStorageUsed(userId);
+}
+async function getUserStorageQuota(userId) {
+    return getAdapter().getUserStorageQuota(userId);
+}
+async function setUserStorageQuota(userId, quotaBytes) {
+    return getAdapter().setUserStorageQuota(userId, quotaBytes);
+}
+async function saveTotpSecret(userId, secret) {
+    return getAdapter().saveTotpSecret(userId, secret);
+}
+async function enableTotp(userId) {
+    return getAdapter().enableTotp(userId);
+}
+async function disableTotp(userId) {
+    return getAdapter().disableTotp(userId);
+}
+async function getTotpSecret(userId) {
+    return getAdapter().getTotpSecret(userId);
+}
+async function isTotpEnabled(userId) {
+    return getAdapter().isTotpEnabled(userId);
+}
+async function checkDuplicateHash(fileHash) {
+    return getAdapter().checkDuplicateHash(fileHash);
+}
+async function getImagesByFileHash(fileHash) {
+    return getAdapter().getImagesByFileHash(fileHash);
+}
+async function recordView(imageId, ipAddress, referrer) {
+    return getAdapter().recordView(imageId, ipAddress, referrer);
+}
+async function getImageStats(userId) {
+    return getAdapter().getImageStats(userId);
+}
+async function getViewsOverTime(imageId, days, userId) {
+    return getAdapter().getViewsOverTime(imageId, days, userId);
+}
+async function exportData() {
+    return getAdapter().exportData();
+}
+async function importData(data) {
+    return getAdapter().importData(data);
+}
+async function createContentFlag(data) {
+    return getAdapter().createContentFlag(data);
+}
+async function getContentFlag(flagId) {
+    return getAdapter().getContentFlag(flagId);
+}
+async function listContentFlags(options) {
+    return getAdapter().listContentFlags(options);
+}
+async function getFlagCountByStatus() {
+    return getAdapter().getFlagCountByStatus();
+}
+async function updateFlagStatus(flagId, newStatus) {
+    return getAdapter().updateFlagStatus(flagId, newStatus);
+}
+async function createFlagResolution(data) {
+    return getAdapter().createFlagResolution(data);
+}
+async function getFlagResolutions(flagId) {
+    return getAdapter().getFlagResolutions(flagId);
+}
+async function getFlagWithResolutions(flagId) {
+    return getAdapter().getFlagWithResolutions(flagId);
+}
+export { initDB, getDB, createUser, getUserByUsername, getUserByEmail, getUserById, listUsers, deleteUser, updateUserPassword, verifyPassword, createApiToken, getActiveApiTokenByHash, listApiTokensByUser, revokeApiToken, touchApiTokenUsage, createImage, getImageBySlug, getImageById, listImagesByUser, listAllImages, deleteImage, slugExists, searchImages, getImagesByIds, upsertImageBlob, getImageBlobByImageId, checkDuplicateHash, getImagesByFileHash, recordView, getImageStats, getViewsOverTime, exportData, importData, createContentFlag, getContentFlag, listContentFlags, getFlagCountByStatus, updateFlagStatus, createFlagResolution, getFlagResolutions, getFlagWithResolutions, upsertImageThumbnail, getImageThumbnail, createAlbum, getAlbumById, listAlbumsByUser, updateAlbum, deleteAlbum, addImagesToAlbum, removeImageFromAlbum, getAlbumImages, updateImageVisibility, getExpiredImages, updateImageExpiration, getUserStorageUsed, getUserStorageQuota, setUserStorageQuota, saveTotpSecret, enableTotp, disableTotp, getTotpSecret, isTotpEnabled, };
+//# sourceMappingURL=index.js.map

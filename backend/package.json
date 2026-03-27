@@ -21,7 +21,8 @@
     "db:replicate": "node scripts/db-replicate.js --migrate",
     "db:to-blobs": "node scripts/storage-migrate-to-blobs.js",
     "db:verify-blobs": "node scripts/storage-migrate-to-blobs.js --verify-only",
-    "db:clear-blob-checkpoint": "node scripts/storage-migrate-to-blobs.js --clear-checkpoint"
+    "db:clear-blob-checkpoint": "node scripts/storage-migrate-to-blobs.js --clear-checkpoint",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@hapi/bourne": "^3.0.0",
@@ -44,6 +45,17 @@
     "pg": "^8.13.0"
   },
   "devDependencies": {
-    "cross-env": "^10.1.0"
+    "@types/bcrypt": "^6.0.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.6",
+    "@types/express-session": "^1.18.2",
+    "@types/multer": "^2.1.0",
+    "@types/node": "^25.5.0",
+    "@types/pg": "^8.20.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/uuid": "^10.0.0",
+    "@types/yazl": "^3.3.0",
+    "cross-env": "^10.1.0",
+    "typescript": "^6.0.2"
   }
 }
