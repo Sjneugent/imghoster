@@ -23,3 +23,31 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# TypeScript compiled output (source is .ts, compiled .js is generated)
+backend/**/*.js.map
+backend/dist/
+
+# Compiled JS files that have a .ts source (do NOT ignore JS-only files)
+backend/env.js
+backend/logger.js
+backend/server.js
+backend/seed.js
+backend/db/BaseAdapter.js
+backend/db/index.js
+backend/db/adapters/sqlite.js
+backend/db/adapters/postgresql.js
+backend/middleware/requireAuth.js
+backend/middleware/apiToken.js
+backend/routes/admin.js
+backend/routes/albums.js
+backend/routes/auth.js
+backend/routes/flags.js
+backend/routes/images.js
+backend/routes/serve.js
+backend/routes/stats.js
+backend/scripts/backup-scheduler.js
+backend/scripts/db-backup.js
+backend/scripts/db-migrate.js
+backend/scripts/db-replicate.js
+backend/scripts/db-restore.js

@@ -1,39 +1,40 @@
-/**
- * Check whether the localhost auth bypass is enabled.
- * Set LOCALHOST_BYPASS=false to disable it (any other value keeps it on).
- */
 function localhostBypassEnabled() {
-  const val = process.env.LOCALHOST_BYPASS;
-  if (val === undefined || val === null) return true; // default: enabled
-  return val !== 'false' && val !== '0';
+    const val = process.env.LOCALHOST_BYPASS;
+    if (val === undefined || val === null)
+        return true;
+    return val !== 'false' && val !== '0';
 }
-
 function isLocalhost(req) {
-  if (!localhostBypassEnabled()) return false;
-  const ip = req.ip;
-  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+    if (!localhostBypassEnabled())
+        return false;
+    const ip = req.ip;
+    return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
 }
-
 function requireAuth(req, res, next) {
-  if (isLocalhost(req)) return next();
-  if (!req.session || !req.session.userId) {
-    if (req.path.startsWith('/api/')) {
-      return res.status(401).json({ error: 'Authentication required.' });
+    if (isLocalhost(req))
+        return next();
+    if (!req.session || !req.session.userId) {
+        if (req.path.startsWith('/api/')) {
+            res.status(401).json({ error: 'Authentication required.' });
+            return;
+        }
+        res.redirect('/login.html');
+        return;
     }
-    return res.redirect('/login.html');
-  }
-  next();
+    next();
 }
-
 function requireAdmin(req, res, next) {
-  if (isLocalhost(req)) return next();
-  if (!req.session || !req.session.userId) {
-    return res.status(401).json({ error: 'Authentication required.' });
-  }
-  if (!req.session.isAdmin) {
-    return res.status(403).json({ error: 'Admin privileges required.' });
-  }
-  next();
+    if (isLocalhost(req))
+        return next();
+    if (!req.session || !req.session.userId) {
+        res.status(401).json({ error: 'Authentication required.' });
+        return;
+    }
+    if (!req.session.isAdmin) {
+        res.status(403).json({ error: 'Admin privileges required.' });
+        return;
+    }
+    next();
 }
-
 export { requireAuth, requireAdmin, isLocalhost };
+//# sourceMappingURL=requireAuth.js.map
