@@ -1138,14 +1138,14 @@ describe('HTTP API', () => {
     assert.equal(r.status, 200);
     assert.equal(r.body.isDuplicate, false);
     assert.ok(r.body.message);
+  });
 
-    test('POST /api/images/check-hash – includes descriptive error message', async () => {
-      // Simply verify the message format
-      const r = await request('POST', '/api/images/check-hash', { body: { fileHash: 'test-hash-xyz' } });
-      assert.equal(r.status, 200);
-      assert.equal(r.body.isDuplicate, false);
-      assert.match(r.body.message, /unique/i);
-    });
+  test('POST /api/images/check-hash – includes descriptive error message', async () => {
+    // Simply verify the message format
+    const r = await request('POST', '/api/images/check-hash', { body: { fileHash: 'test-hash-xyz' } });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.isDuplicate, false);
+    assert.match(r.body.message, /unique/i);
   });
 
   // ── Upload with visibility/expiration ─────────────────────────────────────
