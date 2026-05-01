@@ -39,6 +39,7 @@ backend/db/adapters/sqlite.js
 backend/db/adapters/postgresql.js
 backend/middleware/requireAuth.js
 backend/middleware/apiToken.js
+backend/middleware/uploadThrottle.js
 backend/routes/admin.js
 backend/routes/albums.js
 backend/routes/auth.js
