@@ -758,6 +758,53 @@ describe('HTTP API', () => {
     assert.ok(Array.isArray(r.body));
   });
 
+  test('POST /api/admin/users – localhost can create admin user without auth', async () => {
+    const r = await request('POST', '/api/admin/users', {
+      body: { username: 'localcreatedadmin', password: 'LocalAdmin1!', isAdmin: true },
+    });
+    assert.equal(r.status, 201, `Expected 201 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.equal(r.body.username, 'localcreatedadmin');
+    assert.equal(r.body.isAdmin, true, 'response should confirm admin privileges were set');
+
+    // Verify admin flag is set in the user list
+    const listR = await request('GET', '/api/admin/users');
+    assert.equal(listR.status, 200);
+    const created = listR.body.find((u) => u.username === 'localcreatedadmin');
+    assert.ok(created, 'newly created user should appear in user list');
+    assert.equal(created.is_admin, 1, 'user should have admin privileges in database');
+  });
+
+  test('POST /api/admin/users – localhost can create regular user without auth', async () => {
+    const r = await request('POST', '/api/admin/users', {
+      body: { username: 'localcreateduser', password: 'LocalUser1!', isAdmin: false },
+    });
+    assert.equal(r.status, 201, `Expected 201 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.equal(r.body.username, 'localcreateduser');
+    assert.equal(r.body.isAdmin, false, 'response should confirm no admin privileges were set');
+
+    // Verify admin flag is not set in the user list
+    const listR = await request('GET', '/api/admin/users');
+    const created = listR.body.find((u) => u.username === 'localcreateduser');
+    assert.ok(created, 'newly created user should appear in user list');
+    assert.equal(created.is_admin, 0, 'user should not have admin privileges in database');
+  });
+
+  test('POST /api/admin/users – returns 409 for duplicate username', async () => {
+    const r = await request('POST', '/api/admin/users', {
+      body: { username: 'admin', password: 'SomePass1!', isAdmin: false },
+    });
+    assert.equal(r.status, 409, `Expected 409 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.ok(r.body.error);
+  });
+
+  test('POST /api/admin/users – returns 400 for short password', async () => {
+    const r = await request('POST', '/api/admin/users', {
+      body: { username: 'newuserX', password: 'short', isAdmin: false },
+    });
+    assert.equal(r.status, 400, `Expected 400 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.ok(r.body.error);
+  });
+
   // Helper: perform a multipart upload request
   function uploadRequest(urlPath, filename, fileContent, mimeType, { cookies = '', fields = {} } = {}) {
     return new Promise((resolve, reject) => {
