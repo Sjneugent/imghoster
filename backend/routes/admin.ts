@@ -27,9 +27,10 @@ router.post('/users', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Password must be at least 8 characters.' });
   }
   try {
-    const id = await createUser(username, password, !!isAdmin);
-    logger.info('User created', { id, username, isAdmin: !!isAdmin });
-    res.status(201).json({ id, username });
+    const adminFlag = !!isAdmin;
+    const id = await createUser(username, password, adminFlag);
+    logger.info('User created', { id, username, isAdmin: adminFlag });
+    res.status(201).json({ id, username, isAdmin: adminFlag });
   } catch (err) {
     if ((err as Error).message.includes('UNIQUE')) {
       return res.status(409).json({ error: 'Username already exists.' });
@@ -60,7 +61,7 @@ router.patch('/users/:id/password', async (req: Request, res: Response) => {
 router.delete('/users/:id', async (req: Request, res: Response) => {
   try {
     const targetId = Number(req.params.id);
-    if (targetId === req.session.userId) {
+    if (req.session.userId !== undefined && targetId === req.session.userId) {
       return res.status(400).json({ error: 'You cannot delete your own account.' });
     }
 

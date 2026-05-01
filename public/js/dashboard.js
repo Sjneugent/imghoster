@@ -73,12 +73,13 @@ function escHtml(s) {
       return;
     }
     try {
-      await App.api('/api/admin/users', {
+      const created = await App.api('/api/admin/users', {
         method: 'POST',
         body: JSON.stringify({ username, password, isAdmin }),
       });
       e.target.reset();
-      App.showAlert(alertEl, `User "${username}" created.`, 'success');
+      const role = created.isAdmin ? 'admin' : 'regular user';
+      App.showAlert(alertEl, `User "${username}" created as ${role}.`, 'success');
       loadUsers();
     } catch (err) {
       App.showAlert(alertEl, err.message);
