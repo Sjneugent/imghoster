@@ -1,8 +1,22 @@
+import rateLimit from 'express-rate-limit';
 import type { Request, Response, NextFunction } from 'express';
 
 const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
-// Per-user upload sliding window: userId → timestamps of uploads within the window
+/**
+ * IP-keyed rate limiter for the upload endpoint (15-minute sliding window).
+ * In test mode the cap is raised to 10 000 to avoid interfering with the test suite.
+ */
+const isTest = process.env.NODE_ENV === 'test';
+const uploadLimiter = rateLimit({
+  windowMs: WINDOW_MS,
+  max: isTest ? 10000 : (parseInt(process.env.UPLOAD_RATE_LIMIT_MAX ?? '', 10) || 30),
+  message: { error: 'Upload rate limit exceeded. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+
 const userUploadTimestamps = new Map<number, number[]>();
 
 // Concurrent upload tracking: ip → number of in-flight upload requests
@@ -37,9 +51,11 @@ function userUploadThrottle(req: Request, res: Response, next: NextFunction): vo
   const max = getMaxUploadsPerUser();
 
   // Prune timestamps outside the window to keep memory bounded.
+  // Always write the pruned list back so stale entries don't accumulate.
   const timestamps = (userUploadTimestamps.get(userId) ?? []).filter(
     (t) => now - t < WINDOW_MS
   );
+  userUploadTimestamps.set(userId, timestamps);
 
   if (timestamps.length >= max) {
     const oldestInWindow = timestamps[0];
@@ -63,7 +79,11 @@ function userUploadThrottle(req: Request, res: Response, next: NextFunction): vo
  * the response is finished (whether it succeeds or errors).
  */
 function concurrentUploadGuard(req: Request, res: Response, next: NextFunction): void {
-  const ip = req.ip ?? 'unknown';
+  const ip = req.ip;
+  if (!ip) {
+    res.status(400).json({ error: 'Unable to determine client IP address.' });
+    return;
+  }
   const max = getMaxConcurrentUploads();
   const current = concurrentUploads.get(ip) ?? 0;
 
@@ -76,14 +96,21 @@ function concurrentUploadGuard(req: Request, res: Response, next: NextFunction):
 
   concurrentUploads.set(ip, current + 1);
 
-  res.on('finish', () => {
-    const count = concurrentUploads.get(ip) ?? 1;
+  // Decrement the counter when the response completes, covering both a normal
+  // finish and an early client disconnect (close fires without finish).
+  let decremented = false;
+  const decrement = () => {
+    if (decremented) return;
+    decremented = true;
+    const count = concurrentUploads.get(ip) ?? 0;
     if (count <= 1) {
       concurrentUploads.delete(ip);
     } else {
       concurrentUploads.set(ip, count - 1);
     }
-  });
+  };
+  res.on('finish', decrement);
+  res.on('close', decrement);
 
   next();
 }
@@ -96,4 +123,4 @@ function _resetCountersForTesting(): void {
   concurrentUploads.clear();
 }
 
-export { userUploadThrottle, concurrentUploadGuard, _resetCountersForTesting };
+export { uploadLimiter, userUploadThrottle, concurrentUploadGuard, _resetCountersForTesting };

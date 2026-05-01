@@ -109,15 +109,6 @@ const generalLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Dedicated IP-keyed limiter for the upload endpoint (15-minute sliding window).
-const uploadLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: isTest ? 10000 : (parseInt(process.env.UPLOAD_RATE_LIMIT_MAX ?? '', 10) || 30),
-  message: { error: 'Upload rate limit exceeded. Please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
 // ── CSRF protection ───────────────────────────────────────────────────────────
 function csrfTokenMiddleware(req: Request, _res: Response, next: NextFunction): void {
   if (!req.session.csrfToken) {
@@ -151,8 +142,6 @@ app.use(apiTokenMiddleware);
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/auth', loginLimiter, authRoutes);
 app.use('/api/flags', generalLimiter, csrfProtect, flagsRoutes);
-// IP-keyed upload throttle applied only to the upload endpoint before the router.
-app.post('/api/images/upload', uploadLimiter);
 app.use('/api/images', generalLimiter, requireApiToken, csrfProtect, imagesRoutes);
 app.use('/api/admin', generalLimiter, requireApiToken, csrfProtect, adminRoutes);
 app.use('/api/stats', generalLimiter, requireApiToken, statsRoutes);
