@@ -28,6 +28,7 @@ import {
   updateImageExpiration,
 } from '../db/index.js';
 import { requireAuth, isLocalhost } from '../middleware/requireAuth.js';
+import { userUploadThrottle, concurrentUploadGuard } from '../middleware/uploadThrottle.js';
 import logger from '../logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -328,7 +329,7 @@ router.post('/check-hash', async (req: Request, res: Response) => {
 });
 
 // ── Upload ────────────────────────────────────────────────────────────────────
-router.post('/upload', requireAuth, upload.array('image', 5), async (req: Request, res: Response) => {
+router.post('/upload', requireAuth, concurrentUploadGuard, userUploadThrottle, upload.array('image', 5), async (req: Request, res: Response) => {
   try {
     const files = Array.isArray(req.files) ? (req.files as Express.Multer.File[]) : [];
     if (files.length === 0) {

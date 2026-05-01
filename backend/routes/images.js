@@ -8,6 +8,7 @@ import yazl from 'yazl';
 import { fileURLToPath } from 'node:url';
 import { createImage, getImageById, listImagesByUser, listAllImages, deleteImage, slugExists, searchImages, getImagesByIds, getImageBlobByImageId, checkDuplicateHash, upsertImageBlob, listUsers, upsertImageThumbnail, getUserStorageUsed, getUserStorageQuota, updateImageVisibility, updateImageExpiration, } from '../db/index.js';
 import { requireAuth, isLocalhost } from '../middleware/requireAuth.js';
+import { userUploadThrottle, concurrentUploadGuard } from '../middleware/uploadThrottle.js';
 import logger from '../logger.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -273,7 +274,7 @@ router.post('/check-hash', async (req, res) => {
     }
 });
 // ── Upload ────────────────────────────────────────────────────────────────────
-router.post('/upload', requireAuth, upload.array('image', 5), async (req, res) => {
+router.post('/upload', requireAuth, concurrentUploadGuard, userUploadThrottle, upload.array('image', 5), async (req, res) => {
     try {
         const files = Array.isArray(req.files) ? req.files : [];
         if (files.length === 0) {
