@@ -1386,6 +1386,59 @@ describe('HTTP API', () => {
     assert.ok(r.body.uri, 'should return otpauth URL');
   });
 
+  // ── Upload throttling tests ───────────────────────────────────────────────
+  test('POST /api/images/upload – single upload succeeds (throttle regression)', async () => {
+    const { _resetCountersForTesting } = await import('../middleware/uploadThrottle.js');
+    _resetCountersForTesting();
+
+    const tinyPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5K3A8AAAAASUVORK5CYII=',
+      'base64'
+    );
+    const r = await uploadRequest('/api/images/upload', 'throttle-ok.png', tinyPng, 'image/png');
+    assert.equal(r.status, 201, `Expected 201 but got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.ok(r.body.slug, 'throttle should not block a normal upload');
+  });
+
+  test('POST /api/images/upload – per-user throttle returns 429 after limit is exceeded', async () => {
+    const { _resetCountersForTesting } = await import('../middleware/uploadThrottle.js');
+    const originalMax = process.env.USER_UPLOAD_RATE_LIMIT_MAX;
+    process.env.USER_UPLOAD_RATE_LIMIT_MAX = '2';
+    _resetCountersForTesting();
+
+    // Use an authenticated session so req.session.userId is set and the per-user
+    // throttle actually tracks this user's upload count.
+    const loginR = await request('POST', '/api/auth/login', {
+      body: { username: 'admin', password: 'AdminPass1!' },
+    });
+    const throttleCookie = loginR.cookies.map(c => c.split(';')[0]).join('; ');
+
+    const tinyPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5K3A8AAAAASUVORK5CYII=',
+      'base64'
+    );
+
+    try {
+      const r1 = await uploadRequest('/api/images/upload', 'throttle-1.png', tinyPng, 'image/png', { cookies: throttleCookie });
+      assert.equal(r1.status, 201, `First upload should succeed, got ${r1.status}: ${JSON.stringify(r1.body)}`);
+
+      const r2 = await uploadRequest('/api/images/upload', 'throttle-2.png', tinyPng, 'image/png', { cookies: throttleCookie });
+      assert.equal(r2.status, 201, `Second upload should succeed, got ${r2.status}: ${JSON.stringify(r2.body)}`);
+
+      const r3 = await uploadRequest('/api/images/upload', 'throttle-3.png', tinyPng, 'image/png', { cookies: throttleCookie });
+      assert.equal(r3.status, 429, `Third upload should be throttled, got ${r3.status}: ${JSON.stringify(r3.body)}`);
+      assert.ok(r3.body.error, 'throttled response should include an error message');
+    } finally {
+      // Always restore state so subsequent tests are unaffected.
+      if (originalMax === undefined) {
+        delete process.env.USER_UPLOAD_RATE_LIMIT_MAX;
+      } else {
+        process.env.USER_UPLOAD_RATE_LIMIT_MAX = originalMax;
+      }
+      _resetCountersForTesting();
+    }
+  });
+
 });
 
 // ── Localhost bypass toggle tests ─────────────────────────────────────────────
