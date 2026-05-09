@@ -92,6 +92,10 @@ async function updateUserPassword(id: number, plainPassword: string) {
   return getAdapter().updateUserPassword(id, plainPassword);
 }
 
+async function updateUserRealName(id: number, realName: string | null) {
+  return getAdapter().updateUserRealName(id, realName);
+}
+
 async function verifyPassword(plainPassword: string, hash: string) {
   return getAdapter().verifyPassword(plainPassword, hash);
 }
@@ -334,6 +338,7 @@ export {
   listUsers,
   deleteUser,
   updateUserPassword,
+  updateUserRealName,
   verifyPassword,
   createApiToken,
   getActiveApiTokenByHash,

@@ -237,6 +237,12 @@ class SqliteAdapter extends BaseAdapter {
     if (!imageCols.some(c => c.name === 'expires_at')) {
       this.db.exec('ALTER TABLE images ADD COLUMN expires_at TEXT');
     }
+    if (!imageCols.some(c => c.name === 'width')) {
+      this.db.exec('ALTER TABLE images ADD COLUMN width INTEGER');
+    }
+    if (!imageCols.some(c => c.name === 'height')) {
+      this.db.exec('ALTER TABLE images ADD COLUMN height INTEGER');
+    }
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_images_visibility ON images(visibility)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_images_expires ON images(expires_at)');
 
@@ -342,6 +348,10 @@ class SqliteAdapter extends BaseAdapter {
     return this.getDb().prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, id);
   }
 
+  async updateUserRealName(id: number, realName: string | null): Promise<DbRunResult> {
+    return this.getDb().prepare('UPDATE users SET real_name = ? WHERE id = ?').run(realName, id);
+  }
+
   async verifyPassword(plainPassword: string, hash: string): Promise<boolean> {
     return bcrypt.compare(plainPassword, hash);
   }
@@ -392,11 +402,12 @@ class SqliteAdapter extends BaseAdapter {
     filename, originalName, slug, mimeType, size, userId,
     comment = null, tags = null, fileHash = null,
     storageBackend = 'file', visibility = 'public', expiresAt = null,
+    width = null, height = null,
   }: CreateImageData): Promise<number> {
     const result = this.getDb().prepare(
-      `INSERT INTO images (filename, original_name, slug, mime_type, size, storage_backend, file_hash, comment, tags, user_id, visibility, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(filename, originalName, slug, mimeType, size, storageBackend, fileHash, comment, tags, userId, visibility, expiresAt);
+      `INSERT INTO images (filename, original_name, slug, mime_type, size, storage_backend, file_hash, comment, tags, user_id, visibility, expires_at, width, height)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(filename, originalName, slug, mimeType, size, storageBackend, fileHash, comment, tags, userId, visibility, expiresAt, width, height);
     return Number(result.lastInsertRowid);
   }
 
@@ -453,16 +464,16 @@ class SqliteAdapter extends BaseAdapter {
         `SELECT i.*, u.username, COUNT(v.id) AS view_count
          FROM images i JOIN users u ON u.id = i.user_id
          LEFT JOIN image_views v ON v.image_id = i.id
-         WHERE i.slug LIKE ? OR i.original_name LIKE ? OR u.username LIKE ?
+         WHERE i.slug LIKE ? OR i.original_name LIKE ? OR u.username LIKE ? OR i.tags LIKE ?
          GROUP BY i.id ORDER BY i.created_at DESC`
-      ).all(pattern, pattern, pattern) as ImageWithStats[];
+      ).all(pattern, pattern, pattern, pattern) as ImageWithStats[];
     }
     return this.getDb().prepare(
       `SELECT i.*, COUNT(v.id) AS view_count
        FROM images i LEFT JOIN image_views v ON v.image_id = i.id
-       WHERE i.user_id = ? AND (i.slug LIKE ? OR i.original_name LIKE ?)
+       WHERE i.user_id = ? AND (i.slug LIKE ? OR i.original_name LIKE ? OR i.tags LIKE ?)
        GROUP BY i.id ORDER BY i.created_at DESC`
-    ).all(userId, pattern, pattern) as ImageWithStats[];
+    ).all(userId, pattern, pattern, pattern) as ImageWithStats[];
   }
 
   async getImagesByIds(ids: number[]): Promise<ImageRow[]> {

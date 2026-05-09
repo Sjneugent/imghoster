@@ -42,6 +42,8 @@ export interface ImageRow {
   expires_at: string | null;
   user_id: number;
   created_at: string;
+  width: number | null;
+  height: number | null;
 }
 
 export interface ImageWithStats extends ImageRow {
@@ -62,6 +64,8 @@ export interface CreateImageData {
   storageBackend?: string;
   visibility?: string;
   expiresAt?: string | null;
+  width?: number | null;
+  height?: number | null;
 }
 
 export interface BlobRow {
@@ -232,6 +236,7 @@ abstract class BaseAdapter {
   abstract listUsers(): Promise<PublicUserRow[]>;
   abstract deleteUser(id: number): Promise<DbRunResult>;
   abstract updateUserPassword(id: number, plainPassword: string): Promise<DbRunResult>;
+  abstract updateUserRealName(id: number, realName: string | null): Promise<DbRunResult>;
   abstract verifyPassword(plainPassword: string, hash: string): Promise<boolean>;
 
   // ── API token helpers ─────────────────────────────────────────────────────
