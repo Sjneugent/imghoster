@@ -206,6 +206,14 @@ export interface ExportData {
 
 export type DbRunResult = RunResult | { changes: number };
 
+export interface StorageObjectRow {
+  key: string;
+  blob_data: Buffer;
+  content_type: string;
+  blob_size: number;
+  created_at: string;
+}
+
 /**
  * BaseAdapter – abstract base class defining the database interface contract.
  *
@@ -299,6 +307,13 @@ abstract class BaseAdapter {
   // ── Data export / import ──────────────────────────────────────────────────
   abstract exportData(): Promise<ExportData>;
   abstract importData(data: ExportData): Promise<void>;
+
+  // ── Generic storage object helpers (used by DbBlobProvider) ──────────────
+  abstract putStorageObject(key: string, data: Buffer, contentType: string): Promise<void>;
+  abstract getStorageObject(key: string): Promise<StorageObjectRow | null>;
+  abstract deleteStorageObject(key: string): Promise<void>;
+  abstract existsStorageObject(key: string): Promise<boolean>;
+  abstract listStorageObjects(prefix?: string): Promise<string[]>;
 }
 
 export default BaseAdapter;

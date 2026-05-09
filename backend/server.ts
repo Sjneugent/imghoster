@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import SqliteSessionStore from 'express-session-better-sqlite3';
 import { initDB } from './db/index.js';
+import { initStorage } from './storage/index.js';
 import { isLocalhost } from './middleware/requireAuth.js';
 import { apiTokenMiddleware, requireApiToken } from './middleware/apiToken.js';
 import logger from './logger.js';
@@ -197,6 +198,7 @@ async function cleanupExpiredImages(): Promise<void> {
 
 async function start() {
   await initDB(DB_PATH);
+  await initStorage();
 
   cleanupTimer = setInterval(cleanupExpiredImages, CLEANUP_INTERVAL_MS);
   if (cleanupTimer.unref) cleanupTimer.unref();

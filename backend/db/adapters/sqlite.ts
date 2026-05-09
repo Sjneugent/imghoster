@@ -28,6 +28,7 @@ import type {
   ListContentFlagsOptions,
   ExportData,
   DbRunResult,
+  StorageObjectRow,
 } from '../BaseAdapter.js';
 
 const SALT_ROUNDS = 12;
@@ -277,6 +278,13 @@ class SqliteAdapter extends BaseAdapter {
         enabled INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS storage_objects (
+        key TEXT PRIMARY KEY,
+        blob_data BLOB NOT NULL,
+        content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+        blob_size INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE INDEX IF NOT EXISTS idx_albums_user ON albums(user_id);
       CREATE INDEX IF NOT EXISTS idx_album_images_image ON album_images(image_id);
@@ -794,6 +802,37 @@ class SqliteAdapter extends BaseAdapter {
   async isTotpEnabled(userId: number): Promise<boolean> {
     const row = this.getDb().prepare('SELECT enabled FROM totp_secrets WHERE user_id = ?').get(userId) as { enabled: number } | undefined;
     return row ? row.enabled === 1 : false;
+  }
+
+  // ── Generic storage object helpers ────────────────────────────────────────
+
+  async putStorageObject(key: string, data: Buffer, contentType: string): Promise<void> {
+    this.getDb().prepare(
+      'INSERT OR REPLACE INTO storage_objects (key, blob_data, content_type, blob_size) VALUES (?, ?, ?, ?)'
+    ).run(key, data, contentType, data.length);
+  }
+
+  async getStorageObject(key: string): Promise<StorageObjectRow | null> {
+    const row = this.getDb().prepare('SELECT * FROM storage_objects WHERE key = ?').get(key) as StorageObjectRow | undefined;
+    return row ?? null;
+  }
+
+  async deleteStorageObject(key: string): Promise<void> {
+    this.getDb().prepare('DELETE FROM storage_objects WHERE key = ?').run(key);
+  }
+
+  async existsStorageObject(key: string): Promise<boolean> {
+    const row = this.getDb().prepare('SELECT 1 as found FROM storage_objects WHERE key = ?').get(key) as { found: number } | undefined;
+    return !!row;
+  }
+
+  async listStorageObjects(prefix?: string): Promise<string[]> {
+    if (prefix) {
+      const rows = this.getDb().prepare('SELECT key FROM storage_objects WHERE key LIKE ?').all(`${prefix}%`) as Array<{ key: string }>;
+      return rows.map(r => r.key);
+    }
+    const rows = this.getDb().prepare('SELECT key FROM storage_objects ORDER BY key').all() as Array<{ key: string }>;
+    return rows.map(r => r.key);
   }
 }
 

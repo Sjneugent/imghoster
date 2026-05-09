@@ -26,6 +26,7 @@ import type {
   ListContentFlagsOptions,
   ExportData,
   DbRunResult,
+  StorageObjectRow,
 } from './BaseAdapter.js';
 
 let adapter: BaseAdapter | null = null;
@@ -303,6 +304,26 @@ async function getFlagWithResolutions(flagId: number) {
   return getAdapter().getFlagWithResolutions(flagId);
 }
 
+async function putStorageObject(key: string, data: Buffer, contentType: string) {
+  return getAdapter().putStorageObject(key, data, contentType);
+}
+
+async function getStorageObject(key: string) {
+  return getAdapter().getStorageObject(key);
+}
+
+async function deleteStorageObject(key: string) {
+  return getAdapter().deleteStorageObject(key);
+}
+
+async function existsStorageObject(key: string) {
+  return getAdapter().existsStorageObject(key);
+}
+
+async function listStorageObjects(prefix?: string) {
+  return getAdapter().listStorageObjects(prefix);
+}
+
 export {
   initDB,
   getDB,
@@ -366,4 +387,11 @@ export {
   disableTotp,
   getTotpSecret,
   isTotpEnabled,
+  putStorageObject,
+  getStorageObject,
+  deleteStorageObject,
+  existsStorageObject,
+  listStorageObjects,
 };
+
+export type { StorageObjectRow };
