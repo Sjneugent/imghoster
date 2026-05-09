@@ -29,7 +29,7 @@ class LocalFileProvider extends BaseStorageProvider {
 
   private safePath(key: string): string {
     // Reject any key containing path separators or directory-traversal sequences
-    if (!key || key.includes('/') || key.includes('\\') || key.includes('..') || key === '.' ) {
+    if (!key || key.includes('/') || key.includes('\\') || key.includes('..') || key === '.') {
       throw new Error(`Invalid storage key: "${key}"`);
     }
     return path.join(this.dir, key);

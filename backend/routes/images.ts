@@ -556,12 +556,15 @@ router.post('/download', requireAuth, async (req: Request, res: Response) => {
       }
     }
 
-    const missing = images.filter(async img => !(await getStorageProvider().exists(img.filename)));
+    const existenceChecks = await Promise.all(
+      images.map(async img => ({ img, exists: await getStorageProvider().exists(img.filename) }))
+    );
+    const missing = existenceChecks.filter(r => !r.exists).map(r => r.img);
     if (missing.length > 0) {
       logger.warn('Download requested for missing files', { missing: missing.map(m => m.filename) });
     }
 
-    const available = images;  // provider handles existence checks per-file
+    const available = images;  // provider handles errors per-file in the loop below
     if (available.length === 0) {
       return res.status(404).json({ error: 'No images available.' });
     }
