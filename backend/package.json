@@ -12,7 +12,7 @@
     "dev": "tsc && node --watch server.js",
     "dev:secure": "cross-env LOCALHOST_BYPASS=false tsc && node --watch server.js",
     "seed": "tsc && node seed.js",
-    "test": "tsc && node --test tests/api.test.js",
+    "test": "tsc && node --test tests/api.test.js tests/storage.test.js",
     "loadtest": "node scripts/loadtest.js",
     "db:backup": "tsc && node scripts/db-backup.js",
     "db:restore": "tsc && node scripts/db-restore.js",
@@ -24,6 +24,9 @@
     "db:to-blobs": "node scripts/storage-migrate-to-blobs.js",
     "db:verify-blobs": "node scripts/storage-migrate-to-blobs.js --verify-only",
     "db:clear-blob-checkpoint": "node scripts/storage-migrate-to-blobs.js --clear-checkpoint",
+    "storage:migrate": "tsc && node scripts/storage-migrate.js",
+    "storage:verify": "tsc && node scripts/storage-migrate.js --verify-only",
+    "storage:sync": "tsc && node scripts/storage-migrate.js --sync-missing",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -44,7 +47,11 @@
     "yazl": "^3.3.1"
   },
   "optionalDependencies": {
-    "pg": "^8.13.0"
+    "pg": "^8.13.0",
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/s3-request-presigner": "^3.0.0",
+    "@azure/storage-blob": "^12.0.0",
+    "@google-cloud/storage": "^7.0.0"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

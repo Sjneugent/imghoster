@@ -1,17 +1,13 @@
 import express from 'express';
 import type { Request, Response } from 'express';
 import path from 'node:path';
-import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { getImageBySlug, getImageBlobByImageId, getImageThumbnail, recordView, deleteImage } from '../db/index.js';
+import { getImageBySlug, getImageThumbnail, recordView, deleteImage } from '../db/index.js';
+import { getStorageProvider } from '../storage/index.js';
 import logger from '../logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', '..', 'uploads');
-const STORAGE_MODE = (process.env.IMAGE_STORAGE_MODE || 'file').toLowerCase();
-const USE_DB_BLOBS = STORAGE_MODE === 'blob' || STORAGE_MODE === 'dbblob';
 
 const router = express.Router();
 
@@ -34,14 +30,6 @@ router.get('/:slug', async (req: Request, res: Response) => {
       return res.status(410).send('This image has expired.');
     }
 
-    if (!USE_DB_BLOBS) {
-      const filePath = path.join(UPLOADS_DIR, image.filename);
-      if (!fs.existsSync(filePath)) {
-        logger.warn('Image file missing from disk', { slug: req.params.slug, filename: image.filename });
-        return res.status(404).send('Image file not found.');
-      }
-    }
-
     const ip = req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || req.ip;
     const referrer = req.get('referer') || req.get('referrer') || null;
     try { await recordView(image.id, ip ?? null, referrer); } catch (viewErr) {
@@ -59,27 +47,24 @@ router.get('/:slug', async (req: Request, res: Response) => {
       res.setHeader('Content-Type', image.mime_type);
     }
 
-    if (image.storage_backend === 'db_blob') {
-      const blobRow = await getImageBlobByImageId(image.id);
-      if (!blobRow || !blobRow.blob_data) {
-        logger.warn('Image blob missing from DB', { slug: req.params.slug, imageId: image.id });
-        return res.status(404).send('Image blob not found.');
-      }
-      res.send(Buffer.from(blobRow.blob_data));
-      logger.debug('Blob image served', { slug: req.params.slug, ip, imageId: image.id });
-      return;
+    // CDN redirect: if the provider supports signed URLs and CDN_BASE_URL is set
+    const cdnBaseUrl = process.env.STORAGE_CDN_BASE_URL;
+    if (cdnBaseUrl) {
+      return res.redirect(302, `${cdnBaseUrl.replace(/\/$/, '')}/${image.filename}`);
     }
 
-    res.sendFile(image.filename, { root: UPLOADS_DIR }, (err) => {
-      if (err) {
-        logger.error('sendFile failed', { slug: req.params.slug, error: (err as Error).message });
-        if (!res.headersSent) {
-          res.status((err as NodeJS.ErrnoException & { status?: number }).status || 500).send('Error serving image.');
-        }
-      } else {
-        logger.debug('Image served', { slug: req.params.slug, ip });
-      }
-    });
+    try {
+      const data = await getStorageProvider().get(image.filename);
+      res.send(data);
+      logger.debug('Image served', { slug: req.params.slug, ip, provider: getStorageProvider().name });
+    } catch (readErr) {
+      logger.warn('Image data missing from storage provider', {
+        slug: req.params.slug,
+        filename: image.filename,
+        error: (readErr as Error).message,
+      });
+      return res.status(404).send('Image file not found.');
+    }
   } catch (err) {
     logger.error('Unexpected error serving image', { slug: req.params.slug, error: (err as Error).message });
     if (!res.headersSent) res.status(500).send('Internal server error.');
@@ -117,3 +102,4 @@ router.get('/:slug/thumb', async (req: Request, res: Response) => {
 });
 
 export default router;
+

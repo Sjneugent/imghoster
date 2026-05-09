@@ -26,6 +26,7 @@ import type {
   ListContentFlagsOptions,
   ExportData,
   DbRunResult,
+  StorageObjectRow,
 } from '../BaseAdapter.js';
 
 const SALT_ROUNDS = 12;
@@ -202,6 +203,14 @@ class PostgresAdapter extends BaseAdapter {
         user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
         secret TEXT NOT NULL,
         enabled INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS storage_objects (
+        key TEXT PRIMARY KEY,
+        blob_data BYTEA NOT NULL,
+        content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+        blob_size INTEGER NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
@@ -816,6 +825,53 @@ class PostgresAdapter extends BaseAdapter {
   async isTotpEnabled(userId: number): Promise<boolean> {
     const row = await this._queryOne<{ enabled: number }>('SELECT enabled FROM totp_secrets WHERE user_id = $1', [userId]);
     return row ? row.enabled === 1 : false;
+  }
+
+  // ── Generic storage object helpers ────────────────────────────────────────
+
+  async putStorageObject(key: string, data: Buffer, contentType: string): Promise<void> {
+    await this.getPool().query(
+      `INSERT INTO storage_objects (key, blob_data, content_type, blob_size)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (key) DO UPDATE
+         SET blob_data = EXCLUDED.blob_data,
+             content_type = EXCLUDED.content_type,
+             blob_size = EXCLUDED.blob_size,
+             created_at = NOW()`,
+      [key, data, contentType, data.length]
+    );
+  }
+
+  async getStorageObject(key: string): Promise<StorageObjectRow | null> {
+    const row = await this._queryOne<StorageObjectRow>(
+      'SELECT key, blob_data, content_type, blob_size, created_at FROM storage_objects WHERE key = $1',
+      [key]
+    );
+    return row ?? null;
+  }
+
+  async deleteStorageObject(key: string): Promise<void> {
+    await this.getPool().query('DELETE FROM storage_objects WHERE key = $1', [key]);
+  }
+
+  async existsStorageObject(key: string): Promise<boolean> {
+    const row = await this._queryOne<{ found: number }>(
+      'SELECT 1 AS found FROM storage_objects WHERE key = $1',
+      [key]
+    );
+    return !!row;
+  }
+
+  async listStorageObjects(prefix?: string): Promise<string[]> {
+    if (prefix) {
+      const rows = await this._queryAll<{ key: string }>(
+        'SELECT key FROM storage_objects WHERE key LIKE $1 ORDER BY key',
+        [`${prefix}%`]
+      );
+      return rows.map(r => r.key);
+    }
+    const rows = await this._queryAll<{ key: string }>('SELECT key FROM storage_objects ORDER BY key');
+    return rows.map(r => r.key);
   }
 }
 

@@ -17,9 +17,7 @@ import {
   slugExists,
   searchImages,
   getImagesByIds,
-  getImageBlobByImageId,
   checkDuplicateHash,
-  upsertImageBlob,
   listUsers,
   upsertImageThumbnail,
   getUserStorageUsed,
@@ -27,6 +25,7 @@ import {
   updateImageVisibility,
   updateImageExpiration,
 } from '../db/index.js';
+import { getStorageProvider } from '../storage/index.js';
 import { requireAuth, isLocalhost } from '../middleware/requireAuth.js';
 import { userUploadThrottle, concurrentUploadGuard, uploadLimiter } from '../middleware/uploadThrottle.js';
 import logger from '../logger.js';
@@ -34,9 +33,6 @@ import logger from '../logger.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', '..', 'uploads');
-const STORAGE_MODE = (process.env.IMAGE_STORAGE_MODE || 'file').toLowerCase();
-const USE_DB_BLOBS = STORAGE_MODE === 'blob' || STORAGE_MODE === 'dbblob';
 const MAX_FILE_SIZE_BYTES = Number(process.env.MAX_UPLOAD_FILE_SIZE_BYTES || 10 * 1024 * 1024);
 const ALLOWED_MIME = new Set([
   'image/jpeg',
@@ -269,20 +265,9 @@ async function getLocalhostFallbackUserId(): Promise<number | null> {
   return admin ? admin.id : (users.length > 0 ? users[0].id : null);
 }
 
-const storage = USE_DB_BLOBS
-  ? multer.memoryStorage()
-  : multer.diskStorage({
-      destination(_req, _file, cb) {
-        cb(null, UPLOADS_DIR);
-      },
-      filename(_req, file, cb) {
-        const ext = path.extname(file.originalname).toLowerCase();
-        cb(null, `${uuidv4()}${ext}`);
-      },
-    });
-
+// Always use memory storage – the active storage provider handles persistence
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: MAX_FILE_SIZE_BYTES, files: 5 },
   fileFilter(_req, file, cb) {
     if (ALLOWED_MIME.has(file.mimetype)) {
@@ -340,7 +325,6 @@ router.post('/upload', requireAuth, userUploadThrottle, uploadLimiter, concurren
       try {
         await validateUploadedImage(file);
       } catch (validationErr) {
-        await Promise.all(files.map((f) => cleanupUploadedFile(f)));
         return res.status(400).json({
           error: `Invalid image file "${file.originalname}": ${(validationErr as Error).message}`,
         });
@@ -349,22 +333,15 @@ router.post('/upload', requireAuth, userUploadThrottle, uploadLimiter, concurren
 
     const customSlug = req.body.slug ? sanitiseSlug(req.body.slug) : '';
     if (customSlug && files.length > 1) {
-      await Promise.all(files.map((f) => cleanupUploadedFile(f)));
       return res.status(400).json({ error: 'Custom slug can only be used when uploading a single image.' });
     }
 
     const planned: Array<{ file: Express.Multer.File; slug: string }> = [];
     for (let i = 0; i < files.length; i += 1) {
       const file = files[i];
-      let slug = customSlug;
-      if (!slug) {
-        slug = file.filename
-          ? path.basename(file.filename, path.extname(file.filename))
-          : uuidv4();
-      }
+      let slug = customSlug || uuidv4();
 
       if (await slugExists(slug)) {
-        await Promise.all(files.map((f) => cleanupUploadedFile(f)));
         return res.status(409).json({ error: `The URL slug "${slug}" is already taken.` });
       }
 
@@ -380,7 +357,6 @@ router.post('/upload', requireAuth, userUploadThrottle, uploadLimiter, concurren
 
     const userId = req.session.userId || (isLocalhost(req) ? await getLocalhostFallbackUserId() : null);
     if (!userId) {
-      await Promise.all(files.map((f) => cleanupUploadedFile(f)));
       logger.warn('Upload rejected: no user available', { ip: req.ip });
       return res.status(500).json({ error: 'No user available to associate upload with.' });
     }
@@ -391,7 +367,6 @@ router.post('/upload', requireAuth, userUploadThrottle, uploadLimiter, concurren
       const used = await getUserStorageUsed(userId);
       const totalIncoming = files.reduce((sum, f) => sum + f.size, 0);
       if (used + totalIncoming > quota) {
-        await Promise.all(files.map((f) => cleanupUploadedFile(f)));
         const usedMB = (used / (1024 * 1024)).toFixed(1);
         const quotaMB = (quota / (1024 * 1024)).toFixed(1);
         return res.status(413).json({
@@ -402,6 +377,7 @@ router.post('/upload', requireAuth, userUploadThrottle, uploadLimiter, concurren
 
     const host = req.get('host') || 'localhost';
     const protocol = req.secure ? 'https' : 'http';
+    const storageProvider = getStorageProvider();
 
     interface UploadResult {
       id: number | null;
@@ -421,6 +397,7 @@ router.post('/upload', requireAuth, userUploadThrottle, uploadLimiter, concurren
 
     const uploaded: UploadResult[] = [];
     for (const item of planned) {
+      let fileBytes: Buffer = item.file.buffer ?? Buffer.alloc(0);
       let compression = {
         requested: compressRequested,
         applied: false,
@@ -428,7 +405,7 @@ router.post('/upload', requireAuth, userUploadThrottle, uploadLimiter, concurren
         finalSize: item.file.size,
       };
 
-      if (compressRequested) {
+      if (compressRequested && COMPRESSIBLE_MIME.has(item.file.mimetype)) {
         try {
           const result = await compressUploadedImage(item.file);
           compression = {
@@ -437,28 +414,25 @@ router.post('/upload', requireAuth, userUploadThrottle, uploadLimiter, concurren
             originalSize: result.originalSize,
             finalSize: result.finalSize,
           };
+          // After compression, the bytes may have been updated in item.file.buffer
+          fileBytes = item.file.buffer ?? fileBytes;
         } catch (compressErr) {
           logger.warn('Image compression failed; continuing with original file', {
-            filename: item.file.filename,
             mimeType: item.file.mimetype,
             error: (compressErr as Error).message,
           });
         }
       }
 
-      let blobBuffer: Buffer | null = null;
-      if (USE_DB_BLOBS) {
-        blobBuffer = await getUploadedFileBytes(item.file);
-      }
-
-      const storageFilename = USE_DB_BLOBS
-        ? `${item.slug}${extensionFromMime(item.file.mimetype)}`
-        : item.file.filename;
+      const storageKey = `${item.slug}${extensionFromMime(item.file.mimetype)}`;
 
       let id: number | null = null;
       try {
+        // Persist to storage provider before DB record so DB can reference the key
+        await storageProvider.put(storageKey, fileBytes, item.file.mimetype);
+
         id = await createImage({
-          filename: storageFilename,
+          filename: storageKey,
           originalName: item.file.originalname,
           slug: item.slug,
           mimeType: item.file.mimetype,
@@ -466,23 +440,19 @@ router.post('/upload', requireAuth, userUploadThrottle, uploadLimiter, concurren
           comment,
           tags,
           fileHash: files.length === 1 ? fileHash : null,
-          storageBackend: USE_DB_BLOBS ? 'db_blob' : 'file',
+          storageBackend: storageProvider.name,
           userId,
           visibility,
           expiresAt,
         });
 
-        if (USE_DB_BLOBS && blobBuffer) {
-          await upsertImageBlob(id, blobBuffer);
-          await cleanupUploadedFile(item.file);
-        }
-
-        const thumbBytes = blobBuffer || await getUploadedFileBytes(item.file);
-        const thumb = await generateThumbnail(thumbBytes, item.file.mimetype);
+        const thumb = await generateThumbnail(fileBytes, item.file.mimetype);
         if (thumb) {
           await upsertImageThumbnail(id, thumb.data, thumb.width ?? 0, thumb.height ?? 0);
         }
       } catch (persistErr) {
+        // Roll back: remove from storage and DB if partially written
+        await storageProvider.delete(storageKey).catch(() => {});
         if (id) {
           await deleteImage(id).catch(() => {});
         }
@@ -493,8 +463,8 @@ router.post('/upload', requireAuth, userUploadThrottle, uploadLimiter, concurren
         id,
         slug: item.slug,
         userId,
-        filename: storageFilename,
-        storage: USE_DB_BLOBS ? 'db_blob' : 'file',
+        filename: storageKey,
+        storage: storageProvider.name,
       });
       uploaded.push({
         id,
@@ -518,9 +488,6 @@ router.post('/upload', requireAuth, userUploadThrottle, uploadLimiter, concurren
     });
   } catch (err) {
     logger.error('Upload failed', { error: (err as Error).message, stack: (err as Error).stack });
-    if (Array.isArray(req.files)) {
-      await Promise.all((req.files as Express.Multer.File[]).map((f) => cleanupUploadedFile(f)));
-    }
     if (!res.headersSent) {
       res.status(500).json({ error: 'Upload failed due to an internal error.' });
     }
@@ -589,16 +556,15 @@ router.post('/download', requireAuth, async (req: Request, res: Response) => {
       }
     }
 
-    const missing = images.filter(
-      img => img.storage_backend !== 'db_blob' && !fs.existsSync(path.join(UPLOADS_DIR, img.filename))
+    const existenceChecks = await Promise.all(
+      images.map(async img => ({ img, exists: await getStorageProvider().exists(img.filename) }))
     );
+    const missing = existenceChecks.filter(r => !r.exists).map(r => r.img);
     if (missing.length > 0) {
       logger.warn('Download requested for missing files', { missing: missing.map(m => m.filename) });
     }
 
-    const available = images.filter(
-      img => img.storage_backend === 'db_blob' || fs.existsSync(path.join(UPLOADS_DIR, img.filename))
-    );
+    const available = images;  // provider handles errors per-file in the loop below
     if (available.length === 0) {
       return res.status(404).json({ error: 'No images available.' });
     }
@@ -616,6 +582,7 @@ router.post('/download', requireAuth, async (req: Request, res: Response) => {
     zipfile.outputStream.pipe(res);
 
     const usedNames = new Set<string>();
+    const storageProvider = getStorageProvider();
     for (const img of available) {
       const ext = path.extname(img.filename) || extensionFromMime(img.mime_type);
       let name = img.slug + ext;
@@ -623,13 +590,11 @@ router.post('/download', requireAuth, async (req: Request, res: Response) => {
         name = `${img.slug}_${img.id}${ext}`;
       }
       usedNames.add(name);
-      if (img.storage_backend === 'db_blob') {
-        const blobRow = await getImageBlobByImageId(img.id);
-        if (blobRow?.blob_data) {
-          zipfile.addBuffer(blobRow.blob_data, name);
-        }
-      } else {
-        zipfile.addFile(path.join(UPLOADS_DIR, img.filename), name);
+      try {
+        const data = await storageProvider.get(img.filename);
+        zipfile.addBuffer(data, name);
+      } catch (readErr) {
+        logger.warn('Skipping image not found in storage', { filename: img.filename, error: (readErr as Error).message });
       }
     }
 
@@ -706,14 +671,10 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Forbidden.' });
     }
 
-    if (image.storage_backend !== 'db_blob') {
-      const filePath = path.join(UPLOADS_DIR, image.filename);
-      fs.unlink(filePath, (unlinkErr) => {
-        if (unlinkErr && unlinkErr.code !== 'ENOENT') {
-          logger.warn('Failed to delete image file from disk', { filename: image.filename, error: unlinkErr.message });
-        }
-      });
-    }
+    // Delete from storage provider; fall back gracefully if it fails
+    await getStorageProvider().delete(image.filename).catch((delErr: Error) => {
+      logger.warn('Failed to delete image from storage', { filename: image.filename, error: delErr.message });
+    });
 
     await deleteImage(image.id);
     logger.info('Image deleted', { id: image.id, slug: image.slug });
