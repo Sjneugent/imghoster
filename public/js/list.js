@@ -233,7 +233,7 @@ function escHtml(s) {
           const tagsHtml = img.tags
             ? `<div style="margin-top:.2rem;font-size:.76rem">${
                 img.tags.split(',').map(t => t.trim()).filter(Boolean)
-                  .map(t => `<button class="tag-filter-btn" data-tag="${escHtml(t)}" style="cursor:pointer;border:none;background:var(--accent);color:#fff;border-radius:3px;padding:1px 6px;margin:1px;font-size:.72rem" title="Filter by tag">${escHtml(t)}</button>`)
+                  .map(t => `<button class="tag-filter-btn" data-tag="${escHtml(t)}" title="Filter by tag">${escHtml(t)}</button>`)
                   .join('')
               }</div>`
             : '';

@@ -177,8 +177,11 @@ async function compressUploadedImage(file: Express.Multer.File): Promise<Compres
 async function stripExifData(file: Express.Multer.File): Promise<void> {
   if (!COMPRESSIBLE_MIME.has(file.mimetype)) return;
   const input = Buffer.isBuffer(file.buffer) ? file.buffer : file.path;
-  // .rotate() applies EXIF orientation then discards it; not calling .withMetadata()
-  // strips all remaining EXIF/GPS metadata from the output.
+  // By default, sharp strips all metadata (EXIF, GPS, ICC, etc.) unless
+  // .withMetadata() is called. Calling .rotate() applies the EXIF orientation
+  // field first so the image appears correctly, then the metadata (including
+  // GPS coordinates) is discarded in the output. This is the sharp-idiomatic
+  // pattern for orientation-safe EXIF stripping.
   const stripped = await sharp(input, { animated: true })
     .rotate()
     .toBuffer();
