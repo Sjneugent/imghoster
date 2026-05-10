@@ -5,7 +5,7 @@ declare const Chart: any;
 
 (async () => {
   function escHtml(s: unknown): string {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   const meOrNull = await App.requireAuth();

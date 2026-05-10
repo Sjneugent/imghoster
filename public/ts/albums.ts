@@ -114,12 +114,19 @@
           <div class="card" style="padding:.5rem;text-align:center">
             <a href="/i/${escHtml(img.slug)}" target="_blank">
               <img src="/i/${escHtml(img.slug)}/thumb" alt="${escHtml(img.slug)}" style="max-width:100%;border-radius:4px"
-                   onerror="this.src='/i/${escHtml(img.slug)}'" />
+                   data-fallback="/i/${encodeURIComponent(img.slug)}" />
             </a>
             <div style="font-size:.78rem;margin-top:.3rem">${escHtml(img.slug)}</div>
             <button class="btn btn-danger btn-sm" style="margin-top:.3rem" data-remove-img="${img.id}" data-album="${id}">Remove</button>
           </div>
         `).join('');
+
+        imagesEl.querySelectorAll<HTMLImageElement>('img[data-fallback]').forEach((imgEl) => {
+          imgEl.onerror = () => {
+            imgEl.onerror = null;
+            imgEl.src = imgEl.dataset.fallback ?? '';
+          };
+        });
 
         imagesEl.querySelectorAll<HTMLButtonElement>('[data-remove-img]').forEach((btn) => {
           btn.addEventListener('click', async () => {

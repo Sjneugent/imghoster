@@ -48,29 +48,43 @@ declare const App: AppModule;
 
   function renderPreviewGrid(files: File[]): void {
     clearPreviewUrls();
+    dzPreview.innerHTML = '';
     if (!files.length) {
       dzPreview.style.display = 'none';
-      dzPreview.innerHTML = '';
       return;
     }
 
-    const cards = files.map((file) => {
+    for (const file of files) {
       const objectUrl = URL.createObjectURL(file);
       previewUrls.push(objectUrl);
-      const safeName = escapeHtml(file.name || 'unnamed');
-      const sizeLabel = App.formatBytes(file.size ?? 0);
-      return `
-        <figure class="dz-thumb-card">
-          <img class="dz-thumb-image" src="${objectUrl}" alt="${safeName}" />
-          <figcaption class="dz-thumb-meta">
-            <span class="dz-thumb-name" title="${safeName}">${safeName}</span>
-            <span class="dz-thumb-size">${sizeLabel}</span>
-          </figcaption>
-        </figure>
-      `;
-    });
 
-    dzPreview.innerHTML = cards.join('');
+      const figure = document.createElement('figure');
+      figure.className = 'dz-thumb-card';
+
+      const img = document.createElement('img');
+      img.className = 'dz-thumb-image';
+      img.src = objectUrl; // blob: URL from browser API – safe to assign directly
+      img.alt = file.name ?? '';
+
+      const caption = document.createElement('figcaption');
+      caption.className = 'dz-thumb-meta';
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'dz-thumb-name';
+      nameSpan.title = file.name ?? '';
+      nameSpan.textContent = file.name ?? '';
+
+      const sizeSpan = document.createElement('span');
+      sizeSpan.className = 'dz-thumb-size';
+      sizeSpan.textContent = App.formatBytes(file.size ?? 0);
+
+      caption.appendChild(nameSpan);
+      caption.appendChild(sizeSpan);
+      figure.appendChild(img);
+      figure.appendChild(caption);
+      dzPreview.appendChild(figure);
+    }
+
     dzPreview.style.display = 'grid';
   }
 
