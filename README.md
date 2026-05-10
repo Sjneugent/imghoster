@@ -23,6 +23,7 @@ Minimal personal image hosting with a Node.js/Express backend, SQLite database a
 - [Load Testing Script](#load-testing-script)
 - [Localhost Auth Bypass](#localhost-auth-bypass)
 - [Logging](#logging)
+- [Frontend TypeScript Build](#frontend-typescript-build)
 - [Directory Layout](#directory-layout)
 - [REST API Reference](#rest-api-reference)
 - [Running as a systemd Service](#running-as-a-systemd-service)
@@ -52,7 +53,7 @@ Minimal personal image hosting with a Node.js/Express backend, SQLite database a
 - **Database**: SQLite via `better-sqlite3`
 - **Auth**: `express-session` + `bcrypt`
 - **File uploads**: `multer`
-- **Frontend**: Vanilla HTML / CSS / JS (no build step required)
+- **Frontend**: Vanilla HTML / CSS; TypeScript source in `public/ts/` compiled to `public/js/`
 - **Reverse proxy**: NGINX
 
 ---
@@ -63,13 +64,21 @@ Minimal personal image hosting with a Node.js/Express backend, SQLite database a
 > (`seed`, `start`, `dev`, `test`) from the project root. You can also
 > `cd backend` and run them there.
 
+> **Frontend build:** The `public/js/` scripts are compiled from TypeScript sources
+> in `public/ts/`. Run `npm run build:frontend` (or `npm run build` for both)
+> after cloning or whenever you edit a `.ts` file. The compiled `.js` files are
+> gitignored — you must compile them before serving the app.
+
 ### 1. Install dependencies
 
 ```bash
-# From the project root:
+# From the project root (installs TypeScript for the frontend build):
+npm install
+
+# Install backend dependencies:
 npm run install:backend
 
-# Or from the backend directory:
+# Or from the backend directory directly:
 cd backend
 npm install
 ```
@@ -740,24 +749,67 @@ production.
 
 ---
 
+## Frontend TypeScript Build
+
+The browser scripts in `public/js/` are generated from TypeScript sources in
+`public/ts/`. The compiled `.js` files are **gitignored** — you must build them
+before serving the application.
+
+### Build commands
+
+| Command | What it does |
+|---|---|
+| `npm run build:frontend` | Compile `public/ts/*.ts` → `public/js/*.js` only |
+| `npm run build` | Compile frontend **and** backend TypeScript |
+
+### Source layout
+
+| File | Purpose |
+|---|---|
+| `public/ts/globals.d.ts` | Ambient types shared across all scripts (`User`, `Image`, `AppModule`, …) |
+| `public/ts/app.ts` | `App` global – shared helpers (API, alerts, auth guard, navbar) |
+| `public/ts/theme.ts` | Dark/light theme toggle (loaded first on every page) |
+| `public/ts/hash-utils.ts` | ES module – SHA-256 file hashing and duplicate detection |
+| `public/ts/upload.ts` | Upload page – drag-and-drop, duplicate check, multi-file preview |
+| `public/ts/login.ts` | Login page |
+| `public/ts/register.ts` | Registration page |
+| `public/ts/token.ts` | API token management |
+| `public/ts/list.ts` | My Images page – list, search, bulk delete/download |
+| `public/ts/albums.ts` | Album management |
+| `public/ts/dashboard.ts` | Admin dashboard – user management |
+| `public/ts/stats.ts` | Statistics page with Chart.js timeline |
+| `public/ts/account.ts` | Account settings (display name, password) |
+| `public/ts/2fa.ts` | Two-factor authentication setup |
+
+### TypeScript configuration
+
+The frontend uses its own `public/ts/tsconfig.json`:
+
+- **`target`**: `ES2020` (async/await, optional chaining, nullish coalescing)
+- **`module`**: `ESNext` (native browser ES imports for `hash-utils` / `upload`)
+- **`lib`**: `["ES2020", "DOM"]` (full browser API types)
+- **`strict`**: `true` (null checks, implicit-any errors, etc.)
+
+---
+
 ## Directory Layout
 
 ```
 imghoster/
 ├── backend/
-│   ├── server.js           # Express entry point
-│   ├── db.js               # SQLite schema & helpers
-│   ├── logger.js           # Lightweight levelled logger
-│   ├── seed.js             # Create initial admin user
+│   ├── server.ts           # Express entry point (TypeScript source)
+│   ├── db/                 # SQLite/PostgreSQL adapters
+│   ├── logger.ts           # Lightweight levelled logger
+│   ├── seed.ts             # Create initial admin user
 │   ├── .env.example        # Environment variable template
 │   ├── routes/
-│   │   ├── auth.js         # POST /api/auth/login|logout, GET /api/auth/me
-│   │   ├── images.js       # POST /api/images/upload, GET/DELETE /api/images/:id
-│   │   ├── admin.js        # GET/POST/DELETE /api/admin/users
-│   │   ├── stats.js        # GET /api/stats, GET /api/stats/timeline
-│   │   └── serve.js        # GET /i/:slug  (public, view-tracked)
+│   │   ├── auth.ts         # POST /api/auth/login|logout, GET /api/auth/me
+│   │   ├── images.ts       # POST /api/images/upload, GET/DELETE /api/images/:id
+│   │   ├── admin.ts        # GET/POST/DELETE /api/admin/users
+│   │   ├── stats.ts        # GET /api/stats, GET /api/stats/timeline
+│   │   └── serve.ts        # GET /i/:slug  (public, view-tracked)
 │   ├── middleware/
-│   │   └── requireAuth.js  # Session auth + admin guard + localhost bypass
+│   │   └── requireAuth.ts  # Session auth + admin guard + localhost bypass
 │   └── tests/
 │       └── api.test.js     # Node.js built-in test runner tests
 ├── public/
@@ -768,7 +820,14 @@ imghoster/
 │   ├── dashboard.html
 │   ├── token.html
 │   ├── css/style.css
-│   └── js/app.js
+│   ├── ts/                 # TypeScript source (committed)
+│   │   ├── tsconfig.json
+│   │   ├── globals.d.ts    # Shared ambient type declarations
+│   │   ├── app.ts          # Shared helpers (global App object)
+│   │   ├── theme.ts        # Theme toggle
+│   │   └── *.ts            # Per-page scripts
+│   └── js/                 # Compiled JS (gitignored – run npm run build:frontend)
+│       └── *.js
 ├── uploads/                # Uploaded images (gitignored)
 └── nginx/
     └── imghoster.conf      # NGINX site config template

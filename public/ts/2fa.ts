@@ -1,19 +1,18 @@
-/* 2fa.js – two-factor authentication management */
-'use strict';
+/* 2fa.ts – two-factor authentication management */
 
 (async () => {
   const me = await App.requireAuth();
   if (!me) return;
   App.initNavbar(me);
 
-  const alertEl = document.getElementById('alert');
-  const statusEl = document.getElementById('totp-status');
-  const setupEl = document.getElementById('totp-setup');
-  const disableEl = document.getElementById('totp-disable');
+  const alertEl = document.getElementById('alert') as HTMLElement;
+  const statusEl = document.getElementById('totp-status') as HTMLElement;
+  const setupEl = document.getElementById('totp-setup') as HTMLElement;
+  const disableEl = document.getElementById('totp-disable') as HTMLElement;
 
-  async function checkStatus() {
+  async function checkStatus(): Promise<void> {
     try {
-      const { enabled } = await App.api('/api/auth/totp/status');
+      const { enabled } = await App.api<{ enabled: boolean }>('/api/auth/totp/status');
       if (enabled) {
         statusEl.innerHTML = `
           <div style="display:flex;align-items:center;gap:.75rem">
@@ -38,26 +37,27 @@
         disableEl.style.display = 'none';
         setupEl.style.display = 'none';
 
-        document.getElementById('btn-start-setup').addEventListener('click', startSetup);
+        document.getElementById('btn-start-setup')!.addEventListener('click', startSetup);
       }
-    } catch (err) {
+    } catch (err: any) {
       App.showAlert(alertEl, 'Failed to check 2FA status: ' + err.message);
     }
   }
 
-  async function startSetup() {
+  async function startSetup(): Promise<void> {
     try {
-      const data = await App.api('/api/auth/totp/setup', { method: 'POST' });
-      document.getElementById('qr-container').innerHTML = `<img src="${data.qrDataUrl}" alt="TOTP QR Code" style="max-width:200px" />`;
-      document.getElementById('totp-secret').textContent = data.secret;
+      const data = await App.api<{ qrDataUrl: string; secret: string }>('/api/auth/totp/setup', { method: 'POST' });
+      (document.getElementById('qr-container') as HTMLElement).innerHTML =
+        `<img src="${data.qrDataUrl}" alt="TOTP QR Code" style="max-width:200px" />`;
+      (document.getElementById('totp-secret') as HTMLElement).textContent = data.secret;
       setupEl.style.display = 'block';
-    } catch (err) {
+    } catch (err: any) {
       App.showAlert(alertEl, err.message);
     }
   }
 
-  document.getElementById('btn-verify').addEventListener('click', async () => {
-    const code = document.getElementById('verify-code').value.trim();
+  (document.getElementById('btn-verify') as HTMLButtonElement).addEventListener('click', async () => {
+    const code = (document.getElementById('verify-code') as HTMLInputElement).value.trim();
     if (!code || code.length !== 6) {
       return App.showAlert(alertEl, 'Please enter a 6-digit code.');
     }
@@ -68,13 +68,13 @@
       });
       App.showAlert(alertEl, '2FA enabled successfully!', 'success');
       await checkStatus();
-    } catch (err) {
+    } catch (err: any) {
       App.showAlert(alertEl, err.message);
     }
   });
 
-  document.getElementById('btn-disable').addEventListener('click', async () => {
-    const password = document.getElementById('disable-password').value;
+  (document.getElementById('btn-disable') as HTMLButtonElement).addEventListener('click', async () => {
+    const password = (document.getElementById('disable-password') as HTMLInputElement).value;
     if (!password) return App.showAlert(alertEl, 'Password is required.');
     try {
       await App.api('/api/auth/totp/disable', {
@@ -82,9 +82,9 @@
         body: JSON.stringify({ password }),
       });
       App.showAlert(alertEl, '2FA disabled.', 'success');
-      document.getElementById('disable-password').value = '';
+      (document.getElementById('disable-password') as HTMLInputElement).value = '';
       await checkStatus();
-    } catch (err) {
+    } catch (err: any) {
       App.showAlert(alertEl, err.message);
     }
   });
