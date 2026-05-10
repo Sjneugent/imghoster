@@ -63,7 +63,9 @@ declare const App: AppModule;
 
       const img = document.createElement('img');
       img.className = 'dz-thumb-image';
-      img.src = objectUrl; // blob: URL from browser API – safe to assign directly
+      // URL.createObjectURL always returns a blob: URL; validate before DOM assignment
+      if (!objectUrl.startsWith('blob:')) break;
+      img.src = objectUrl;
       img.alt = file.name ?? '';
 
       const caption = document.createElement('figcaption');
