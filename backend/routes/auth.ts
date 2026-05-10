@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import {
   getUserByUsername,
   getUserByEmail,
+  getUserById,
   verifyPassword,
   createUser,
   createApiToken,
@@ -359,7 +360,7 @@ router.patch('/me', requireAuth, async (req: Request, res: Response) => {
 });
 
 // GET /api/auth/me
-router.get('/me', (req: Request, res: Response) => {  try {
+router.get('/me', async (req: Request, res: Response) => {  try {
     if (!req.session || !req.session.userId) {
       if (isLocalhost(req)) {
         return res.json({
@@ -369,11 +370,14 @@ router.get('/me', (req: Request, res: Response) => {  try {
       }
       return res.status(401).json({ error: 'Not authenticated.' });
     }
+    const profile = await getUserById(req.session.userId);
     res.json({
       id: req.session.userId,
       username: req.session.username,
       isAdmin: req.session.isAdmin,
       csrfToken: req.session.csrfToken,
+      realName: profile?.real_name ?? null,
+      email: profile?.email ?? null,
     });
   } catch (err) {
     logger.error('Auth check error', { error: (err as Error).message });

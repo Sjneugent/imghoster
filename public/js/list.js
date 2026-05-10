@@ -231,7 +231,11 @@ function escHtml(s) {
             ? `<div style="margin-top:.35rem;font-size:.78rem;color:var(--text-muted)"><strong>Comment:</strong> ${escHtml(img.comment)}</div>`
             : '';
           const tagsHtml = img.tags
-            ? `<div style="margin-top:.2rem;font-size:.76rem;color:var(--accent)"><strong>Tags:</strong> ${escHtml(img.tags)}</div>`
+            ? `<div style="margin-top:.2rem;font-size:.76rem">${
+                img.tags.split(',').map(t => t.trim()).filter(Boolean)
+                  .map(t => `<button class="tag-filter-btn" data-tag="${escHtml(t)}" style="cursor:pointer;border:none;background:var(--accent);color:#fff;border-radius:3px;padding:1px 6px;margin:1px;font-size:.72rem" title="Filter by tag">${escHtml(t)}</button>`)
+                  .join('')
+              }</div>`
             : '';
           const vis = img.visibility || 'public';
           const visBadge = vis === 'public' ? '' : `<span class="badge badge-${vis}">${vis}</span>`;
@@ -290,6 +294,14 @@ function escHtml(s) {
     });
     tbody.querySelectorAll('[data-delete]').forEach((btn) => {
       btn.addEventListener('click', () => deleteImage(Number(btn.dataset.delete), btn));
+    });
+    tbody.querySelectorAll('.tag-filter-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tag = btn.dataset.tag;
+        searchInput.value = tag;
+        clearTimeout(searchTimeout);
+        filterImages(tag);
+      });
     });
     tbody.querySelectorAll('.img-checkbox').forEach((cb) => {
       cb.addEventListener('change', () => {
