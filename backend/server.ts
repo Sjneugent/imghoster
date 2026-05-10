@@ -19,7 +19,7 @@ import authRoutes from './routes/auth.js';
 import imagesRoutes from './routes/images.js';
 import adminRoutes from './routes/admin.js';
 import statsRoutes from './routes/stats.js';
-import serveRoutes from './routes/serve.js';
+import serveRoutes, { previewRouter } from './routes/serve.js';
 import flagsRoutes from './routes/flags.js';
 import albumsRoutes from './routes/albums.js';
 import { getExpiredImages, deleteImage } from './db/index.js';
@@ -148,6 +148,7 @@ app.use('/api/admin', generalLimiter, requireApiToken, csrfProtect, adminRoutes)
 app.use('/api/stats', generalLimiter, requireApiToken, statsRoutes);
 app.use('/api/albums', generalLimiter, requireApiToken, csrfProtect, albumsRoutes);
 app.use('/i', generalLimiter, serveRoutes);
+app.use('/p', generalLimiter, previewRouter);
 
 app.get('/', (_req: Request, res: Response) => res.redirect('/login.html'));
 

@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import {
   getUserByUsername,
   getUserByEmail,
+  getUserById,
   verifyPassword,
   createUser,
   createApiToken,
@@ -15,6 +16,8 @@ import {
   disableTotp,
   getTotpSecret,
   isTotpEnabled,
+  updateUserPassword,
+  updateUserRealName,
 } from '../db/index.js';
 import { isLocalhost, requireAuth } from '../middleware/requireAuth.js';
 import { hashToken } from '../middleware/apiToken.js';
@@ -317,9 +320,47 @@ router.delete('/tokens/:id', requireAuth, async (req: Request, res: Response) =>
   }
 });
 
-// GET /api/auth/me
-router.get('/me', (req: Request, res: Response) => {
+// PATCH /api/auth/me – update display name or change password
+router.patch('/me', requireAuth, async (req: Request, res: Response) => {
   try {
+    const userId = req.session.userId!;
+    const { realName, currentPassword, newPassword } = req.body;
+
+    // Change password
+    if (currentPassword !== undefined || newPassword !== undefined) {
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: 'Both currentPassword and newPassword are required to change your password.' });
+      }
+      if (String(newPassword).length < 8) {
+        return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+      }
+      const user = await getUserByUsername(req.session.username!);
+      if (!user || !(await verifyPassword(String(currentPassword), user.password_hash))) {
+        return res.status(401).json({ error: 'Current password is incorrect.' });
+      }
+      await updateUserPassword(userId, String(newPassword));
+      logger.info('User changed password', { userId });
+    }
+
+    // Update display name
+    if (realName !== undefined) {
+      const trimmed = String(realName || '').trim();
+      if (trimmed && (trimmed.length < 2 || trimmed.length > 120)) {
+        return res.status(400).json({ error: 'Display name must be between 2 and 120 characters.' });
+      }
+      await updateUserRealName(userId, trimmed || null);
+      logger.info('User updated display name', { userId });
+    }
+
+    res.json({ message: 'Account updated successfully.' });
+  } catch (err) {
+    logger.error('Account update error', { error: (err as Error).message });
+    if (!res.headersSent) res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// GET /api/auth/me
+router.get('/me', async (req: Request, res: Response) => {  try {
     if (!req.session || !req.session.userId) {
       if (isLocalhost(req)) {
         return res.json({
@@ -329,11 +370,14 @@ router.get('/me', (req: Request, res: Response) => {
       }
       return res.status(401).json({ error: 'Not authenticated.' });
     }
+    const profile = await getUserById(req.session.userId);
     res.json({
       id: req.session.userId,
       username: req.session.username,
       isAdmin: req.session.isAdmin,
       csrfToken: req.session.csrfToken,
+      realName: profile?.real_name ?? null,
+      email: profile?.email ?? null,
     });
   } catch (err) {
     logger.error('Auth check error', { error: (err as Error).message });

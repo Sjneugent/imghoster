@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import {
   createImage,
   getImageById,
+  getImageBySlug,
   listImagesByUser,
   listAllImages,
   deleteImage,
@@ -176,9 +177,13 @@ async function compressUploadedImage(file: Express.Multer.File): Promise<Compres
 async function stripExifData(file: Express.Multer.File): Promise<void> {
   if (!COMPRESSIBLE_MIME.has(file.mimetype)) return;
   const input = Buffer.isBuffer(file.buffer) ? file.buffer : file.path;
+  // By default, sharp strips all metadata (EXIF, GPS, ICC, etc.) unless
+  // .withMetadata() is called. Calling .rotate() applies the EXIF orientation
+  // field first so the image appears correctly, then the metadata (including
+  // GPS coordinates) is discarded in the output. This is the sharp-idiomatic
+  // pattern for orientation-safe EXIF stripping.
   const stripped = await sharp(input, { animated: true })
     .rotate()
-    .withMetadata({ orientation: undefined })
     .toBuffer();
   if (Buffer.isBuffer(file.buffer)) {
     file.buffer = stripped;
@@ -424,6 +429,34 @@ router.post('/upload', requireAuth, userUploadThrottle, uploadLimiter, concurren
         }
       }
 
+      // Always strip EXIF/GPS metadata (applies orientation then removes metadata).
+      // This runs after optional compression so no extra re-encoding round-trip is needed
+      // when compression was not requested.
+      if (!compressRequested && COMPRESSIBLE_MIME.has(item.file.mimetype)) {
+        try {
+          await stripExifData(item.file);
+          fileBytes = item.file.buffer ?? fileBytes;
+        } catch (exifErr) {
+          logger.warn('EXIF stripping failed; continuing with original file', {
+            mimeType: item.file.mimetype,
+            error: (exifErr as Error).message,
+          });
+        }
+      }
+
+      // Read image dimensions for storage.
+      let imageWidth: number | null = null;
+      let imageHeight: number | null = null;
+      if (item.file.mimetype !== 'image/svg+xml') {
+        try {
+          const meta = await sharp(fileBytes).metadata();
+          imageWidth = meta.width ?? null;
+          imageHeight = meta.height ?? null;
+        } catch (_dimErr) {
+          // Non-fatal — dimensions remain null
+        }
+      }
+
       const storageKey = `${item.slug}${extensionFromMime(item.file.mimetype)}`;
 
       let id: number | null = null;
@@ -444,6 +477,8 @@ router.post('/upload', requireAuth, userUploadThrottle, uploadLimiter, concurren
           userId,
           visibility,
           expiresAt,
+          width: imageWidth,
+          height: imageHeight,
         });
 
         const thumb = await generateThumbnail(fileBytes, item.file.mimetype);
@@ -610,14 +645,33 @@ router.post('/download', requireAuth, async (req: Request, res: Response) => {
 });
 
 // ── Single image metadata ─────────────────────────────────────────────────────
-router.get('/:id', requireAuth, async (req: Request, res: Response) => {
+// Accepts either a numeric DB ID or the image slug.
+// Public and unlisted images are accessible without authentication.
+// Private images require the owner or an admin to be authenticated.
+router.get('/:id', async (req: Request, res: Response) => {
   try {
-    const image = await getImageById(Number(req.params.id));
+    const idOrSlug = String(req.params.id);
+    let image;
+
+    const numericId = Number(idOrSlug);
+    if (Number.isFinite(numericId) && numericId > 0 && Number.isInteger(numericId)) {
+      image = await getImageById(numericId);
+    }
+    if (!image) {
+      image = await getImageBySlug(idOrSlug);
+    }
+
     if (!image) return res.status(404).json({ error: 'Image not found.' });
 
-    if (!isLocalhost(req) && !req.session.isAdmin && image.user_id !== req.session.userId) {
-      return res.status(403).json({ error: 'Forbidden.' });
+    if (image.visibility === 'private') {
+      const isOwner = req.session?.userId && req.session.userId === image.user_id;
+      const isAdmin = req.session?.isAdmin || isLocalhost(req);
+      const hasApiAuth = req.apiTokenAuthenticated;
+      if (!isOwner && !isAdmin && !hasApiAuth) {
+        return res.status(404).json({ error: 'Image not found.' });
+      }
     }
+
     res.json(image);
   } catch (err) {
     logger.error('Failed to get image metadata', { id: req.params.id, error: (err as Error).message });

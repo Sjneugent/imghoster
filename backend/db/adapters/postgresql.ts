@@ -163,8 +163,10 @@ class PostgresAdapter extends BaseAdapter {
     await client.query('ALTER TABLE images ADD COLUMN IF NOT EXISTS tags TEXT');
     await client.query('ALTER TABLE images ADD COLUMN IF NOT EXISTS file_hash TEXT');
     await client.query("ALTER TABLE images ADD COLUMN IF NOT EXISTS storage_backend TEXT NOT NULL DEFAULT 'file'");
-    await client.query("ALTER TABLE images ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'public'");
+    await client.query('ALTER TABLE images ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT \'public\'');
     await client.query('ALTER TABLE images ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ');
+    await client.query('ALTER TABLE images ADD COLUMN IF NOT EXISTS width INTEGER');
+    await client.query('ALTER TABLE images ADD COLUMN IF NOT EXISTS height INTEGER');
     await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS storage_quota_bytes BIGINT NOT NULL DEFAULT 0');
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique
@@ -284,6 +286,11 @@ class PostgresAdapter extends BaseAdapter {
     return { changes: result.rowCount ?? 0 };
   }
 
+  async updateUserRealName(id: number, realName: string | null): Promise<DbRunResult> {
+    const result = await this.getPool().query('UPDATE users SET real_name = $1 WHERE id = $2', [realName, id]);
+    return { changes: result.rowCount ?? 0 };
+  }
+
   async verifyPassword(plainPassword: string, hash: string): Promise<boolean> {
     return bcrypt.compare(plainPassword, hash);
   }
@@ -337,11 +344,12 @@ class PostgresAdapter extends BaseAdapter {
     filename, originalName, slug, mimeType, size, userId,
     comment = null, tags = null, fileHash = null,
     storageBackend = 'file', visibility = 'public', expiresAt = null,
+    width = null, height = null,
   }: CreateImageData): Promise<number> {
     const row = await this._queryOne<{ id: number }>(
-      `INSERT INTO images (filename, original_name, slug, mime_type, size, storage_backend, file_hash, comment, tags, user_id, visibility, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
-      [filename, originalName, slug, mimeType, size, storageBackend, fileHash, comment, tags, userId, visibility, expiresAt]
+      `INSERT INTO images (filename, original_name, slug, mime_type, size, storage_backend, file_hash, comment, tags, user_id, visibility, expires_at, width, height)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
+      [filename, originalName, slug, mimeType, size, storageBackend, fileHash, comment, tags, userId, visibility, expiresAt, width, height]
     );
     return row!.id;
   }
@@ -404,17 +412,17 @@ class PostgresAdapter extends BaseAdapter {
         `SELECT i.*, u.username, COUNT(v.id) AS view_count
          FROM images i JOIN users u ON u.id = i.user_id
          LEFT JOIN image_views v ON v.image_id = i.id
-         WHERE i.slug ILIKE $1 OR i.original_name ILIKE $2 OR u.username ILIKE $3
+         WHERE i.slug ILIKE $1 OR i.original_name ILIKE $2 OR u.username ILIKE $3 OR i.tags ILIKE $4
          GROUP BY i.id, u.username ORDER BY i.created_at DESC`,
-        [pattern, pattern, pattern]
+        [pattern, pattern, pattern, pattern]
       );
     }
     return this._queryAll<ImageWithStats>(
       `SELECT i.*, COUNT(v.id) AS view_count
        FROM images i LEFT JOIN image_views v ON v.image_id = i.id
-       WHERE i.user_id = $1 AND (i.slug ILIKE $2 OR i.original_name ILIKE $3)
+       WHERE i.user_id = $1 AND (i.slug ILIKE $2 OR i.original_name ILIKE $3 OR i.tags ILIKE $4)
        GROUP BY i.id ORDER BY i.created_at DESC`,
-      [userId, pattern, pattern]
+      [userId, pattern, pattern, pattern]
     );
   }
 

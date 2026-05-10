@@ -607,3 +607,17 @@ thead th input[type="checkbox"] {
   .sidebar nav a.active { border-left-color: transparent; border-bottom-color: var(--accent); }
   .main-content { padding: 1rem; }
 }
+
+/* ── Tag filter buttons (My Images list) ─────────────────────────────────── */
+.tag-filter-btn {
+  cursor: pointer;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 3px;
+  padding: 1px 6px;
+  margin: 1px;
+  font-size: .72rem;
+  transition: background .15s;
+}
+.tag-filter-btn:hover { background: var(--accent-hover); }
