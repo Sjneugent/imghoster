@@ -1,35 +1,42 @@
-/* dashboard.js – admin dashboard page logic */
-'use strict';
-
-function escHtml(s) {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+/* dashboard.ts – admin dashboard page logic */
 
 (async () => {
-  const me = await App.requireAuth(true); // admin only
-  if (!me) return;
+  function escHtml(s: unknown): string {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  const meOrNull = await App.requireAuth(true); // admin only
+  if (!meOrNull) return;
+  const me = meOrNull;
   App.initNavbar(me);
 
-  const alertEl = document.getElementById('alert');
-  const tbody = document.getElementById('users-tbody');
-  const pwModal = document.getElementById('pw-modal');
-  let resetTargetId = null;
+  const alertEl = document.getElementById('alert') as HTMLElement;
+  const tbody = document.getElementById('users-tbody') as HTMLElement;
+  const pwModal = document.getElementById('pw-modal') as HTMLElement;
+  let resetTargetId: number | null = null;
 
-  async function loadUsers() {
+  interface AdminUser {
+    id: number;
+    username: string;
+    is_admin: boolean;
+    created_at: string;
+  }
+
+  async function loadUsers(): Promise<void> {
     App.hideAlert(alertEl);
     try {
-      const users = await App.api('/api/admin/users');
+      const users = await App.api<AdminUser[]>('/api/admin/users');
       renderUsers(users);
-    } catch (err) {
+    } catch (err: any) {
       App.showAlert(alertEl, 'Failed to load users: ' + err.message);
     }
   }
 
-  function renderUsers(users) {
+  function renderUsers(users: AdminUser[]): void {
     tbody.innerHTML = users
       .map(
         (u) => `
@@ -48,21 +55,21 @@ function escHtml(s) {
       )
       .join('');
 
-    tbody.querySelectorAll('[data-reset-id]').forEach((btn) => {
-      btn.addEventListener('click', () => openPwModal(Number(btn.dataset.resetId), btn.dataset.resetName));
+    tbody.querySelectorAll<HTMLButtonElement>('[data-reset-id]').forEach((btn) => {
+      btn.addEventListener('click', () => openPwModal(Number(btn.dataset.resetId), btn.dataset.resetName ?? ''));
     });
-    tbody.querySelectorAll('[data-delete-id]').forEach((btn) => {
+    tbody.querySelectorAll<HTMLButtonElement>('[data-delete-id]').forEach((btn) => {
       btn.addEventListener('click', () => deleteUser(Number(btn.dataset.deleteId), btn));
     });
   }
 
   // Create user
-  document.getElementById('create-user-form').addEventListener('submit', async (e) => {
+  (document.getElementById('create-user-form') as HTMLFormElement).addEventListener('submit', async (e) => {
     e.preventDefault();
     App.hideAlert(alertEl);
-    const username = document.getElementById('new-username').value.trim();
-    const password = document.getElementById('new-password').value;
-    const isAdmin = document.getElementById('new-is-admin').checked;
+    const username = (document.getElementById('new-username') as HTMLInputElement).value.trim();
+    const password = (document.getElementById('new-password') as HTMLInputElement).value;
+    const isAdmin = (document.getElementById('new-is-admin') as HTMLInputElement).checked;
 
     if (!username || !password) {
       App.showAlert(alertEl, 'Username and password are required.');
@@ -73,47 +80,47 @@ function escHtml(s) {
       return;
     }
     try {
-      const created = await App.api('/api/admin/users', {
+      const created = await App.api<{ isAdmin: boolean }>('/api/admin/users', {
         method: 'POST',
         body: JSON.stringify({ username, password, isAdmin }),
       });
-      e.target.reset();
+      (e.target as HTMLFormElement).reset();
       const role = created.isAdmin ? 'admin' : 'regular user';
       App.showAlert(alertEl, `User "${username}" created as ${role}.`, 'success');
       loadUsers();
-    } catch (err) {
+    } catch (err: any) {
       App.showAlert(alertEl, err.message);
     }
   });
 
   // Delete user
-  async function deleteUser(id, btn) {
+  async function deleteUser(id: number, btn: HTMLButtonElement): Promise<void> {
     if (!confirm('Delete this user and ALL their images? This cannot be undone.')) return;
     btn.disabled = true;
     try {
       await App.api(`/api/admin/users/${id}`, { method: 'DELETE' });
       App.showAlert(alertEl, 'User deleted.', 'success');
       loadUsers();
-    } catch (err) {
+    } catch (err: any) {
       App.showAlert(alertEl, err.message);
       btn.disabled = false;
     }
   }
 
   // Password reset modal
-  function openPwModal(id, username) {
+  function openPwModal(id: number, username: string): void {
     resetTargetId = id;
-    document.getElementById('pw-modal-user').textContent = `Resetting password for: ${username}`;
-    document.getElementById('new-pw').value = '';
+    (document.getElementById('pw-modal-user') as HTMLElement).textContent = `Resetting password for: ${username}`;
+    (document.getElementById('new-pw') as HTMLInputElement).value = '';
     pwModal.style.display = 'flex';
   }
 
-  document.getElementById('pw-modal-cancel').addEventListener('click', () => {
+  (document.getElementById('pw-modal-cancel') as HTMLButtonElement).addEventListener('click', () => {
     pwModal.style.display = 'none';
   });
 
-  document.getElementById('pw-modal-save').addEventListener('click', async () => {
-    const pw = document.getElementById('new-pw').value;
+  (document.getElementById('pw-modal-save') as HTMLButtonElement).addEventListener('click', async () => {
+    const pw = (document.getElementById('new-pw') as HTMLInputElement).value;
     if (pw.length < 8) {
       alert('Password must be at least 8 characters.');
       return;
@@ -125,7 +132,7 @@ function escHtml(s) {
       });
       pwModal.style.display = 'none';
       App.showAlert(alertEl, 'Password updated.', 'success');
-    } catch (err) {
+    } catch (err: any) {
       pwModal.style.display = 'none';
       App.showAlert(alertEl, err.message);
     }

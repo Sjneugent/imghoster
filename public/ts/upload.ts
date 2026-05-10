@@ -1,33 +1,35 @@
-/* upload.js – upload page logic */
-'use strict';
+/* upload.ts – upload page logic */
 
 import { validateFileBeforeUpload } from './hash-utils.js';
+
+// App is provided at runtime by app.js loaded as a plain script before this module.
+declare const App: AppModule;
 
 (async () => {
   const me = await App.requireAuth();
   if (!me) return;
   App.initNavbar(me);
 
-  const form = document.getElementById('upload-form');
-  const fileInput = document.getElementById('file-input');
-  const dropZone = document.getElementById('drop-zone');
-  const dropZoneLabel = dropZone.querySelector('.dz-label');
-  const dzPreview = document.getElementById('dz-preview');
-  const uploadBtn = document.getElementById('upload-btn');
-  const alertEl = document.getElementById('alert');
-  const slugInput = document.getElementById('slug');
-  const resultEl = document.getElementById('result');
-  const resultUrl = document.getElementById('result-url');
-  const viewLink = document.getElementById('view-link');
-  const copyBtn = document.getElementById('copy-btn');
-  let previewUrls = [];
+  const form = document.getElementById('upload-form') as HTMLFormElement;
+  const fileInput = document.getElementById('file-input') as HTMLInputElement;
+  const dropZone = document.getElementById('drop-zone') as HTMLElement;
+  const dropZoneLabel = dropZone.querySelector<HTMLElement>('.dz-label');
+  const dzPreview = document.getElementById('dz-preview') as HTMLElement;
+  const uploadBtn = document.getElementById('upload-btn') as HTMLButtonElement;
+  const alertEl = document.getElementById('alert') as HTMLElement;
+  const slugInput = document.getElementById('slug') as HTMLInputElement;
+  const resultEl = document.getElementById('result') as HTMLElement;
+  const resultUrl = document.getElementById('result-url') as HTMLElement;
+  const viewLink = document.getElementById('view-link') as HTMLAnchorElement;
+  const copyBtn = document.getElementById('copy-btn') as HTMLButtonElement;
+  let previewUrls: string[] = [];
 
-  function clearPreviewUrls() {
+  function clearPreviewUrls(): void {
     previewUrls.forEach((url) => URL.revokeObjectURL(url));
     previewUrls = [];
   }
 
-  function escapeHtml(value) {
+  function escapeHtml(value: unknown): string {
     return String(value)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -36,50 +38,66 @@ import { validateFileBeforeUpload } from './hash-utils.js';
       .replace(/'/g, '&#39;');
   }
 
-  function showDuplicateAlertWithLink(message, slug) {
+  function showDuplicateAlertWithLink(message: string, slug: string): void {
     const safeMessage = escapeHtml(message || 'Image already uploaded. Please upload a unique image.');
     const safeSlugText = escapeHtml(slug || 'existing image');
-    const safeHref = `/i/${encodeURIComponent(slug || '')}`;
+    const safeHref = `/i/${encodeURIComponent(slug ?? '')}`;
     alertEl.className = 'alert alert-error show';
     alertEl.innerHTML = `${safeMessage} <a href="${safeHref}" target="_blank" rel="noopener">${safeSlugText}</a>`;
   }
 
-  function renderPreviewGrid(files) {
+  function renderPreviewGrid(files: File[]): void {
     clearPreviewUrls();
+    dzPreview.innerHTML = '';
     if (!files.length) {
       dzPreview.style.display = 'none';
-      dzPreview.innerHTML = '';
       return;
     }
 
-    const cards = files.map((file) => {
+    for (const file of files) {
       const objectUrl = URL.createObjectURL(file);
       previewUrls.push(objectUrl);
-      const safeName = escapeHtml(file.name || 'unnamed');
-      const sizeLabel = App.formatBytes(file.size || 0);
-      return `
-        <figure class="dz-thumb-card">
-          <img class="dz-thumb-image" src="${objectUrl}" alt="${safeName}" />
-          <figcaption class="dz-thumb-meta">
-            <span class="dz-thumb-name" title="${safeName}">${safeName}</span>
-            <span class="dz-thumb-size">${sizeLabel}</span>
-          </figcaption>
-        </figure>
-      `;
-    });
 
-    dzPreview.innerHTML = cards.join('');
+      const figure = document.createElement('figure');
+      figure.className = 'dz-thumb-card';
+
+      const img = document.createElement('img');
+      img.className = 'dz-thumb-image';
+      // URL.createObjectURL always returns a blob: URL; validate before DOM assignment
+      if (!objectUrl.startsWith('blob:')) break;
+      img.src = objectUrl;
+      img.alt = file.name ?? '';
+
+      const caption = document.createElement('figcaption');
+      caption.className = 'dz-thumb-meta';
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'dz-thumb-name';
+      nameSpan.title = file.name ?? '';
+      nameSpan.textContent = file.name ?? '';
+
+      const sizeSpan = document.createElement('span');
+      sizeSpan.className = 'dz-thumb-size';
+      sizeSpan.textContent = App.formatBytes(file.size ?? 0);
+
+      caption.appendChild(nameSpan);
+      caption.appendChild(sizeSpan);
+      figure.appendChild(img);
+      figure.appendChild(caption);
+      dzPreview.appendChild(figure);
+    }
+
     dzPreview.style.display = 'grid';
   }
 
-  function setSelectedFiles(files) {
+  function setSelectedFiles(files: File[]): void {
     const dt = new DataTransfer();
     files.slice(0, 5).forEach((f) => dt.items.add(f));
     fileInput.files = dt.files;
   }
 
-  function onFilesSelected(fileList) {
-    const files = Array.from(fileList || []).filter(Boolean);
+  function onFilesSelected(fileList: FileList | null): void {
+    const files = Array.from(fileList ?? []).filter(Boolean);
     if (files.length === 0) return;
 
     if (files.length > 5) {
@@ -87,7 +105,7 @@ import { validateFileBeforeUpload } from './hash-utils.js';
       setSelectedFiles(files);
     }
 
-    const selected = Array.from(fileInput.files || []);
+    const selected = Array.from(fileInput.files ?? []);
     if (!selected.length) return;
 
     renderPreviewGrid(selected);
@@ -115,10 +133,10 @@ import { validateFileBeforeUpload } from './hash-utils.js';
     dropZone.classList.add('drag-over');
   });
   dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-  dropZone.addEventListener('drop', (e) => {
+  dropZone.addEventListener('drop', (e: DragEvent) => {
     e.preventDefault();
     dropZone.classList.remove('drag-over');
-    const files = Array.from(e.dataTransfer.files || []).filter(Boolean);
+    const files = Array.from(e.dataTransfer?.files ?? []).filter(Boolean);
     if (files.length) {
       setSelectedFiles(files);
       onFilesSelected(fileInput.files);
@@ -126,11 +144,11 @@ import { validateFileBeforeUpload } from './hash-utils.js';
   });
 
   // ── Clipboard paste support ──────────────────────────────────────────────
-  document.addEventListener('paste', (e) => {
+  document.addEventListener('paste', (e: ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;
-    const imageFiles = [];
-    for (const item of items) {
+    const imageFiles: File[] = [];
+    for (const item of Array.from(items)) {
       if (item.kind === 'file' && item.type.startsWith('image/')) {
         const f = item.getAsFile();
         if (f) imageFiles.push(f);
@@ -144,18 +162,18 @@ import { validateFileBeforeUpload } from './hash-utils.js';
   });
 
   // ── Expiration custom date toggle ──────────────────────────────────────────
-  const expiresSelect = document.getElementById('expires-at');
-  const expiresCustom = document.getElementById('expires-at-custom');
+  const expiresSelect = document.getElementById('expires-at') as HTMLSelectElement;
+  const expiresCustom = document.getElementById('expires-at-custom') as HTMLInputElement;
   expiresSelect.addEventListener('change', () => {
     expiresCustom.style.display = expiresSelect.value === 'custom' ? 'block' : 'none';
   });
 
-  function computeExpiresAt() {
+  function computeExpiresAt(): string | null {
     const val = expiresSelect.value;
     if (!val) return null;
     if (val === 'custom') return expiresCustom.value ? new Date(expiresCustom.value).toISOString() : null;
     const now = Date.now();
-    const map = { '1h': 3600000, '24h': 86400000, '7d': 604800000, '30d': 2592000000 };
+    const map: Record<string, number> = { '1h': 3600000, '24h': 86400000, '7d': 604800000, '30d': 2592000000 };
     return map[val] ? new Date(now + map[val]).toISOString() : null;
   }
 
@@ -163,7 +181,7 @@ import { validateFileBeforeUpload } from './hash-utils.js';
     e.preventDefault();
     App.hideAlert(alertEl);
 
-    const selectedFiles = Array.from(fileInput.files || []);
+    const selectedFiles = Array.from(fileInput.files ?? []);
     if (selectedFiles.length === 0) {
       App.showAlert(alertEl, 'Please select at least one image file.');
       return;
@@ -178,15 +196,15 @@ import { validateFileBeforeUpload } from './hash-utils.js';
 
     try {
       // Check for duplicates (only for single file uploads)
-      let fileHash = null;
+      let fileHash: string | null = null;
       if (selectedFiles.length === 1) {
         const validation = await validateFileBeforeUpload(selectedFiles[0]);
         if (!validation.success) {
-          throw new Error(validation.message || 'Failed to validate file');
+          throw new Error(validation.message ?? 'Failed to validate file');
         }
         fileHash = validation.fileHash;
         if (validation.isDuplicate) {
-          const msg = validation.message || 'Image already uploaded. Please upload a unique image.';
+          const msg = validation.message ?? 'Image already uploaded. Please upload a unique image.';
           if (validation.existing) {
             showDuplicateAlertWithLink(msg, validation.existing.slug);
           } else {
@@ -202,15 +220,15 @@ import { validateFileBeforeUpload } from './hash-utils.js';
 
       const fd = new FormData();
       selectedFiles.forEach((f) => fd.append('image', f));
-      const slug = document.getElementById('slug').value.trim();
-      const comment = document.getElementById('comment').value.trim();
-      const tags = document.getElementById('tags').value.trim();
+      const slug = (document.getElementById('slug') as HTMLInputElement).value.trim();
+      const comment = (document.getElementById('comment') as HTMLInputElement).value.trim();
+      const tags = (document.getElementById('tags') as HTMLInputElement).value.trim();
       if (slug) fd.append('slug', slug);
       if (comment) fd.append('comment', comment);
       if (tags) fd.append('tags', tags);
       if (fileHash) fd.append('fileHash', fileHash);
-      fd.append('compress', document.getElementById('compress-image').checked ? 'true' : 'false');
-      fd.append('visibility', document.getElementById('visibility').value);
+      fd.append('compress', (document.getElementById('compress-image') as HTMLInputElement).checked ? 'true' : 'false');
+      fd.append('visibility', (document.getElementById('visibility') as HTMLSelectElement).value);
       const expiresAt = computeExpiresAt();
       if (expiresAt) fd.append('expiresAt', expiresAt);
 
@@ -220,17 +238,18 @@ import { validateFileBeforeUpload } from './hash-utils.js';
         headers: { ...App.csrfHeader(), ...App.apiAuthHeader() },
         body: fd,
       });
-      const data = await res.json();
+      const data: any = await res.json();
       if (!res.ok) throw new Error(data.error || 'Upload failed.');
 
-      const uploaded = Array.isArray(data.uploaded) ? data.uploaded : [data];
+      const uploaded: Array<{ url: string; compression?: { requested: boolean; applied: boolean; finalSize: number; originalSize: number } }> =
+        Array.isArray(data.uploaded) ? data.uploaded : [data];
       if (!uploaded.length || !uploaded[0].url) {
         throw new Error('Upload completed but response was invalid.');
       }
 
       const lines = uploaded.map((item) => {
         let suffix = '';
-        if (item.compression && item.compression.requested) {
+        if (item.compression?.requested) {
           const finalKb = Math.max(1, Math.round(item.compression.finalSize / 1024));
           if (item.compression.applied) {
             const beforeKb = Math.max(1, Math.round(item.compression.originalSize / 1024));
@@ -248,16 +267,16 @@ import { validateFileBeforeUpload } from './hash-utils.js';
       viewLink.textContent = uploaded.length > 1 ? 'Open first image' : 'Open image';
       resultEl.style.display = 'block';
       form.style.display = 'none';
-    } catch (err) {
+    } catch (err: any) {
       App.showAlert(alertEl, err.message);
       uploadBtn.disabled = false;
       uploadBtn.innerHTML = 'Upload';
     }
   });
 
-  copyBtn.addEventListener('click', () => App.copyText(resultUrl.textContent, copyBtn));
+  copyBtn.addEventListener('click', () => App.copyText(resultUrl.textContent ?? '', copyBtn));
 
-  document.getElementById('upload-another').addEventListener('click', () => {
+  document.getElementById('upload-another')!.addEventListener('click', () => {
     form.reset();
     form.style.display = 'block';
     resultEl.style.display = 'none';
