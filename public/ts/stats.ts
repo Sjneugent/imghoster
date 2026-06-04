@@ -1,20 +1,23 @@
-/* stats.js – statistics page logic */
-'use strict';
+/* stats.ts – statistics page logic */
 
-function escHtml(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+// Chart is loaded from CDN (chart.js@4) before this script
+declare const Chart: any;
 
 (async () => {
-  const me = await App.requireAuth();
-  if (!me) return;
+  function escHtml(s: unknown): string {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  const meOrNull = await App.requireAuth();
+  if (!meOrNull) return;
+  const me = meOrNull;
   App.initNavbar(me);
 
-  const showAllLabel = document.getElementById('show-all-label');
-  const showAllCb = document.getElementById('show-all');
-  const daysSelect = document.getElementById('days-select');
-  const colUser = document.getElementById('col-user');
-  let timelineChart = null;
+  const showAllLabel = document.getElementById('show-all-label') as HTMLElement;
+  const showAllCb = document.getElementById('show-all') as HTMLInputElement;
+  const daysSelect = document.getElementById('days-select') as HTMLSelectElement;
+  const colUser = document.getElementById('col-user') as HTMLElement;
+  let timelineChart: any = null;
 
   if (me.isAdmin) {
     showAllLabel.style.display = 'flex';
@@ -25,13 +28,13 @@ function escHtml(s) {
   }
   daysSelect.addEventListener('change', load);
 
-  async function load() {
+  async function load(): Promise<void> {
     const all = me.isAdmin && showAllCb.checked ? '&all=1' : '';
-    const days = daysSelect.value;
+    const days = Number(daysSelect.value);
 
     const [stats, timeline] = await Promise.all([
-      App.api(`/api/stats?${all}`).catch(() => []),
-      App.api(`/api/stats/timeline?days=${days}${all}`).catch(() => []),
+      App.api<StatRow[]>(`/api/stats?${all}`).catch((): StatRow[] => []),
+      App.api<TimelineRow[]>(`/api/stats/timeline?days=${days}${all}`).catch((): TimelineRow[] => []),
     ]);
 
     renderStatCards(stats);
@@ -39,10 +42,10 @@ function escHtml(s) {
     renderTimeline(timeline, days);
   }
 
-  function renderStatCards(stats) {
-    const total = stats.reduce((s, r) => s + (r.view_count || 0), 0);
+  function renderStatCards(stats: StatRow[]): void {
+    const total = stats.reduce((s, r) => s + (r.view_count ?? 0), 0);
     const top = stats.length ? stats[0] : null;
-    document.getElementById('stat-grid').innerHTML = `
+    (document.getElementById('stat-grid') as HTMLElement).innerHTML = `
       <div class="stat-card"><div class="stat-label">Total images</div><div class="stat-value">${stats.length}</div></div>
       <div class="stat-card"><div class="stat-label">Total views</div><div class="stat-value">${total}</div></div>
       <div class="stat-card"><div class="stat-label">Most viewed</div>
@@ -50,8 +53,8 @@ function escHtml(s) {
     `;
   }
 
-  function renderTable(stats) {
-    const tbody = document.getElementById('stats-tbody');
+  function renderTable(stats: StatRow[]): void {
+    const tbody = document.getElementById('stats-tbody') as HTMLElement;
     const showUser = me.isAdmin && showAllCb.checked;
     if (!stats.length) {
       tbody.innerHTML =
@@ -63,7 +66,7 @@ function escHtml(s) {
         (r) => `
       <tr>
         <td><a href="/i/${escHtml(r.slug)}" target="_blank" rel="noopener noreferrer">${escHtml(r.slug)}</a></td>
-        <td ${showUser ? '' : 'style="display:none"'}>${escHtml(r.username || '')}</td>
+        <td ${showUser ? '' : 'style="display:none"'}>${escHtml(r.username ?? '')}</td>
         <td><strong>${r.view_count}</strong></td>
         <td style="font-size:.82rem">${App.formatDate(r.last_viewed)}</td>
         <td style="font-size:.82rem">${App.formatDate(r.created_at)}</td>
@@ -72,20 +75,21 @@ function escHtml(s) {
       .join('');
   }
 
-  function renderTimeline(rows, days) {
-    const ctx = document.getElementById('timeline-chart').getContext('2d');
+  function renderTimeline(rows: TimelineRow[], days: number): void {
+    const canvas = document.getElementById('timeline-chart') as HTMLCanvasElement;
+    const ctx = canvas.getContext('2d');
     if (timelineChart) timelineChart.destroy();
 
-    const map = Object.fromEntries(rows.map((r) => [r.day, r.views]));
-    const labels = [];
-    const data = [];
+    const map: Record<string, number> = Object.fromEntries(rows.map((r) => [r.day, r.views]));
+    const labels: string[] = [];
+    const data: number[] = [];
     const now = new Date();
     for (let i = days - 1; i >= 0; i--) {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
       const key = d.toISOString().slice(0, 10);
       labels.push(key.slice(5));
-      data.push(map[key] || 0);
+      data.push(map[key] ?? 0);
     }
 
     timelineChart = new Chart(ctx, {

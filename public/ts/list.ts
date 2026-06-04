@@ -1,34 +1,34 @@
-/* list.js – my images page logic */
-'use strict';
-
-function escHtml(s) {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+/* list.ts – my images page logic */
 
 (async () => {
-  const me = await App.requireAuth();
-  if (!me) return;
+  function escHtml(s: unknown): string {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  const meOrNull = await App.requireAuth();
+  if (!meOrNull) return;
+  const me = meOrNull;
   App.initNavbar(me);
 
-  const tbody = document.getElementById('images-tbody');
-  const alertEl = document.getElementById('alert');
-  const showAllLabel = document.getElementById('show-all-label');
-  const showAllCheckbox = document.getElementById('show-all');
-  const colUser = document.getElementById('col-user');
-  const searchInput = document.getElementById('search-input');
-  const bulkToolbar = document.getElementById('bulk-toolbar');
-  const selectAllCheckbox = document.getElementById('select-all');
-  const selectAllHead = document.getElementById('select-all-head');
-  const selectionCount = document.getElementById('selection-count');
-  const btnDownload = document.getElementById('btn-download');
-  const btnDeleteSelected = document.getElementById('btn-delete-selected');
+  const tbody = document.getElementById('images-tbody') as HTMLElement;
+  const alertEl = document.getElementById('alert') as HTMLElement;
+  const showAllLabel = document.getElementById('show-all-label') as HTMLElement;
+  const showAllCheckbox = document.getElementById('show-all') as HTMLInputElement;
+  const colUser = document.getElementById('col-user') as HTMLElement;
+  const searchInput = document.getElementById('search-input') as HTMLInputElement;
+  const bulkToolbar = document.getElementById('bulk-toolbar') as HTMLElement;
+  const selectAllCheckbox = document.getElementById('select-all') as HTMLInputElement;
+  const selectAllHead = document.getElementById('select-all-head') as HTMLInputElement;
+  const selectionCount = document.getElementById('selection-count') as HTMLElement;
+  const btnDownload = document.getElementById('btn-download') as HTMLButtonElement;
+  const btnDeleteSelected = document.getElementById('btn-delete-selected') as HTMLButtonElement;
 
-  let allImages = []; // cache of currently loaded images
-  let selectedIds = new Set();
+  let allImages: Image[] = [];
+  let selectedIds = new Set<number>();
 
   if (me.isAdmin) {
     showAllLabel.style.display = 'flex';
@@ -39,9 +39,9 @@ function escHtml(s) {
   }
 
   // ── Search ────────────────────────────────────────────────────────────────
-  let searchTimeout = null;
+  let searchTimeout: ReturnType<typeof setTimeout> | null = null;
   searchInput.addEventListener('input', () => {
-    clearTimeout(searchTimeout);
+    if (searchTimeout) clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
       const query = searchInput.value.trim();
       if (query) {
@@ -52,7 +52,7 @@ function escHtml(s) {
     }, 250);
   });
 
-  function filterImages(query) {
+  function filterImages(query: string): void {
     const q = query.toLowerCase();
     const filtered = allImages.filter((img) => {
       return (
@@ -65,25 +65,24 @@ function escHtml(s) {
   }
 
   // ── Selection management ──────────────────────────────────────────────────
-  function updateSelectionUI() {
+  function updateSelectionUI(): void {
     const count = selectedIds.size;
     bulkToolbar.style.display = allImages.length > 0 ? 'flex' : 'none';
     selectionCount.textContent = count > 0 ? `${count} image${count !== 1 ? 's' : ''} selected` : '';
     btnDownload.disabled = count === 0;
     btnDeleteSelected.disabled = count === 0;
 
-    // Sync header and toolbar "select all" checkboxes
-    const visibleCheckboxes = tbody.querySelectorAll('.img-checkbox');
-    const allChecked = visibleCheckboxes.length > 0 && [...visibleCheckboxes].every(cb => cb.checked);
-    const someChecked = [...visibleCheckboxes].some(cb => cb.checked);
+    const visibleCheckboxes = Array.from(tbody.querySelectorAll<HTMLInputElement>('.img-checkbox'));
+    const allChecked = visibleCheckboxes.length > 0 && visibleCheckboxes.every((cb) => cb.checked);
+    const someChecked = visibleCheckboxes.some((cb) => cb.checked);
     selectAllHead.checked = allChecked;
     selectAllHead.indeterminate = someChecked && !allChecked;
     selectAllCheckbox.checked = allChecked;
     selectAllCheckbox.indeterminate = someChecked && !allChecked;
   }
 
-  function toggleSelectAll(checked) {
-    const checkboxes = tbody.querySelectorAll('.img-checkbox');
+  function toggleSelectAll(checked: boolean): void {
+    const checkboxes = tbody.querySelectorAll<HTMLInputElement>('.img-checkbox');
     checkboxes.forEach((cb) => {
       cb.checked = checked;
       const id = Number(cb.dataset.id);
@@ -119,7 +118,7 @@ function escHtml(s) {
       });
 
       if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
+        const err: any = await response.json().catch(() => ({}));
         throw new Error(err.error || 'Download failed');
       }
 
@@ -133,7 +132,7 @@ function escHtml(s) {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       App.showAlert(alertEl, `Downloaded ${selectedIds.size} image${selectedIds.size !== 1 ? 's' : ''} as ZIP.`, 'success');
-    } catch (err) {
+    } catch (err: any) {
       App.showAlert(alertEl, 'Download failed: ' + err.message);
     } finally {
       btnDownload.textContent = origText;
@@ -158,13 +157,13 @@ function escHtml(s) {
     btnDeleteSelected.textContent = '⏳ Deleting…';
 
     let successCount = 0;
-    const failed = [];
+    const failed: number[] = [];
 
     for (const id of ids) {
       try {
         await App.api(`/api/images/${id}`, { method: 'DELETE' });
         successCount += 1;
-      } catch (_) {
+      } catch {
         failed.push(id);
       }
     }
@@ -186,16 +185,16 @@ function escHtml(s) {
   });
 
   // ── Load images ───────────────────────────────────────────────────────────
-  async function loadImages() {
+  async function loadImages(): Promise<void> {
     tbody.innerHTML =
       '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-muted)">Loading\u2026</td></tr>';
     App.hideAlert(alertEl);
     selectedIds.clear();
     try {
       const url = me.isAdmin && showAllCheckbox.checked ? '/api/images?all=1' : '/api/images';
-      allImages = await App.api(url);
+      allImages = await App.api<Image[]>(url);
       renderImages(allImages);
-    } catch (err) {
+    } catch (err: any) {
       App.showAlert(alertEl, 'Failed to load images: ' + err.message);
       tbody.innerHTML = '';
       allImages = [];
@@ -203,7 +202,7 @@ function escHtml(s) {
     }
   }
 
-  function renderImages(images) {
+  function renderImages(images: Image[]): void {
     if (!images.length) {
       const query = searchInput.value.trim();
       const message = query
@@ -227,24 +226,24 @@ function escHtml(s) {
         const origin = window.location.origin;
         const fullUrl = origin + url;
         const checked = selectedIds.has(img.id) ? 'checked' : '';
-          const commentHtml = img.comment
-            ? `<div style="margin-top:.35rem;font-size:.78rem;color:var(--text-muted)"><strong>Comment:</strong> ${escHtml(img.comment)}</div>`
-            : '';
-          const tagsHtml = img.tags
-            ? `<div style="margin-top:.2rem;font-size:.76rem">${
-                img.tags.split(',').map(t => t.trim()).filter(Boolean)
-                  .map(t => `<button class="tag-filter-btn" data-tag="${escHtml(t)}" title="Filter by tag">${escHtml(t)}</button>`)
-                  .join('')
-              }</div>`
-            : '';
-          const vis = img.visibility || 'public';
-          const visBadge = vis === 'public' ? '' : `<span class="badge badge-${vis}">${vis}</span>`;
-          const expiresHtml = img.expires_at
-            ? `<div style="margin-top:.2rem;font-size:.76rem;color:var(--warning,orange)">Expires: ${App.formatDate(img.expires_at)}</div>`
-            : '';
-          const embedHtml = `<code style="font-size:.7rem;word-break:break-all">&lt;img src="${escHtml(fullUrl)}" /&gt;</code>`;
-          const markdownEmbed = `![${escHtml(img.slug)}](${escHtml(fullUrl)})`;
-          const bbcodeEmbed = `[img]${escHtml(fullUrl)}[/img]`;
+        const commentHtml = img.comment
+          ? `<div style="margin-top:.35rem;font-size:.78rem;color:var(--text-muted)"><strong>Comment:</strong> ${escHtml(img.comment)}</div>`
+          : '';
+        const tagsHtml = img.tags
+          ? `<div style="margin-top:.2rem;font-size:.76rem">${
+              img.tags.split(',').map((t) => t.trim()).filter(Boolean)
+                .map((t) => `<button class="tag-filter-btn" data-tag="${escHtml(t)}" title="Filter by tag">${escHtml(t)}</button>`)
+                .join('')
+            }</div>`
+          : '';
+        const vis = img.visibility ?? 'public';
+        const visBadge = vis === 'public' ? '' : `<span class="badge badge-${vis}">${vis}</span>`;
+        const expiresHtml = img.expires_at
+          ? `<div style="margin-top:.2rem;font-size:.76rem;color:var(--warning,orange)">Expires: ${App.formatDate(img.expires_at)}</div>`
+          : '';
+        const embedHtml = `<code style="font-size:.7rem;word-break:break-all">&lt;img src="${escHtml(fullUrl)}" /&gt;</code>`;
+        const markdownEmbed = `![${escHtml(img.slug)}](${escHtml(fullUrl)})`;
+        const bbcodeEmbed = `[img]${escHtml(fullUrl)}[/img]`;
         return `
         <tr>
           <td><input type="checkbox" class="img-checkbox" data-id="${img.id}" ${checked} /></td>
@@ -255,11 +254,11 @@ function escHtml(s) {
               <span style="flex:1">/i/${escHtml(img.slug)}</span>
               <button class="copy-btn" data-url="${escHtml(fullUrl)}" title="Copy URL">\uD83D\uDCCB</button>
             </div>
-              ${commentHtml}
-              ${tagsHtml}
-              ${expiresHtml}
+            ${commentHtml}
+            ${tagsHtml}
+            ${expiresHtml}
           </td>
-          <td ${showUser ? '' : 'style="display:none"'}>${escHtml(img.username || '')}</td>
+          <td ${showUser ? '' : 'style="display:none"'}>${escHtml(img.username ?? '')}</td>
           <td>${App.formatBytes(img.size)}</td>
           <td>${img.view_count ?? 0}</td>
           <td style="font-size:.82rem">${App.formatDate(img.created_at)}</td>
@@ -280,30 +279,30 @@ function escHtml(s) {
       .join('');
 
     // Attach event listeners
-    tbody.querySelectorAll('[data-copy]').forEach((btn) => {
-      btn.addEventListener('click', () => App.copyText(btn.dataset.copy, btn));
+    tbody.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((btn) => {
+      btn.addEventListener('click', () => App.copyText(btn.dataset.copy ?? '', btn));
     });
-    tbody.querySelectorAll('.copy-btn[data-url]').forEach((btn) => {
-      btn.addEventListener('click', () => App.copyText(btn.dataset.url, btn));
+    tbody.querySelectorAll<HTMLButtonElement>('.copy-btn[data-url]').forEach((btn) => {
+      btn.addEventListener('click', () => App.copyText(btn.dataset.url ?? '', btn));
     });
-    tbody.querySelectorAll('.embed-toggle').forEach((btn) => {
+    tbody.querySelectorAll<HTMLButtonElement>('.embed-toggle').forEach((btn) => {
       btn.addEventListener('click', () => {
         const panel = document.getElementById(`embed-${btn.dataset.embedId}`);
         if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
       });
     });
-    tbody.querySelectorAll('[data-delete]').forEach((btn) => {
+    tbody.querySelectorAll<HTMLButtonElement>('[data-delete]').forEach((btn) => {
       btn.addEventListener('click', () => deleteImage(Number(btn.dataset.delete), btn));
     });
-    tbody.querySelectorAll('.tag-filter-btn').forEach((btn) => {
+    tbody.querySelectorAll<HTMLButtonElement>('.tag-filter-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const tag = btn.dataset.tag;
+        const tag = btn.dataset.tag ?? '';
         searchInput.value = tag;
-        clearTimeout(searchTimeout);
+        if (searchTimeout) clearTimeout(searchTimeout);
         filterImages(tag);
       });
     });
-    tbody.querySelectorAll('.img-checkbox').forEach((cb) => {
+    tbody.querySelectorAll<HTMLInputElement>('.img-checkbox').forEach((cb) => {
       cb.addEventListener('change', () => {
         const id = Number(cb.dataset.id);
         if (cb.checked) {
@@ -318,14 +317,14 @@ function escHtml(s) {
     updateSelectionUI();
   }
 
-  async function deleteImage(id, btn) {
+  async function deleteImage(id: number, btn: HTMLButtonElement): Promise<void> {
     if (!confirm('Delete this image? This cannot be undone.')) return;
     btn.disabled = true;
     try {
       await App.api(`/api/images/${id}`, { method: 'DELETE' });
       selectedIds.delete(id);
       await loadImages();
-    } catch (err) {
+    } catch (err: any) {
       App.showAlert(alertEl, 'Delete failed: ' + err.message);
       btn.disabled = false;
     }

@@ -1,23 +1,24 @@
-/* account.js – account settings page logic */
-'use strict';
+/* account.ts – account settings page logic */
 
 (async () => {
   const me = await App.requireAuth();
   if (!me) return;
   App.initNavbar(me);
 
-  const alertEl = document.getElementById('alert');
-  const alertName = document.getElementById('alert-name');
-  const alertPw = document.getElementById('alert-pw');
-  const formName = document.getElementById('form-name');
-  const formPw = document.getElementById('form-pw');
-  const realNameInput = document.getElementById('real-name');
+  const alertEl = document.getElementById('alert') as HTMLElement;
+  const alertName = document.getElementById('alert-name') as HTMLElement;
+  const alertPw = document.getElementById('alert-pw') as HTMLElement;
+  const formName = document.getElementById('form-name') as HTMLFormElement;
+  const formPw = document.getElementById('form-pw') as HTMLFormElement;
+  const realNameInput = document.getElementById('real-name') as HTMLInputElement;
 
   // Pre-fill display name from server
   try {
-    const user = await App.api('/api/auth/me');
+    const user = await App.api<User>('/api/auth/me');
     if (user.realName) realNameInput.value = user.realName;
-  } catch (_) { /* non-fatal */ }
+  } catch {
+    // non-fatal
+  }
 
   // ── Update display name ───────────────────────────────────────────────────
   formName.addEventListener('submit', async (e) => {
@@ -33,7 +34,7 @@
         body: JSON.stringify({ realName }),
       });
       App.showAlert(alertName, 'Display name updated.', 'success');
-    } catch (err) {
+    } catch (err: any) {
       App.showAlert(alertName, err.message || 'Failed to update display name.', 'error');
     }
   });
@@ -42,9 +43,9 @@
   formPw.addEventListener('submit', async (e) => {
     e.preventDefault();
     App.hideAlert(alertPw);
-    const currentPassword = document.getElementById('current-pw').value;
-    const newPassword = document.getElementById('new-pw').value;
-    const confirmPassword = document.getElementById('confirm-pw').value;
+    const currentPassword = (document.getElementById('current-pw') as HTMLInputElement).value;
+    const newPassword = (document.getElementById('new-pw') as HTMLInputElement).value;
+    const confirmPassword = (document.getElementById('confirm-pw') as HTMLInputElement).value;
 
     if (!currentPassword || !newPassword || !confirmPassword) {
       return App.showAlert(alertPw, 'All password fields are required.', 'error');
@@ -62,7 +63,7 @@
       });
       formPw.reset();
       App.showAlert(alertPw, 'Password changed successfully.', 'success');
-    } catch (err) {
+    } catch (err: any) {
       App.showAlert(alertPw, err.message || 'Failed to change password.', 'error');
     }
   });

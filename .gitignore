@@ -24,9 +24,24 @@ Thumbs.db
 *.swp
 *.swo
 
-# TypeScript compiled output (source is .ts, compiled .js is generated)
+# TypeScript compiled output (backend: source is .ts, compiled .js is generated)
 backend/**/*.js.map
 backend/dist/
+
+# TypeScript compiled output (frontend: source is .ts in public/ts/, compiled .js goes to public/js/)
+public/js/app.js
+public/js/theme.js
+public/js/hash-utils.js
+public/js/upload.js
+public/js/login.js
+public/js/register.js
+public/js/token.js
+public/js/list.js
+public/js/albums.js
+public/js/dashboard.js
+public/js/stats.js
+public/js/account.js
+public/js/2fa.js
 
 # Compiled JS files that have a .ts source (do NOT ignore JS-only files)
 backend/env.js
